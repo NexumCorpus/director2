@@ -93,7 +93,8 @@ class ClaudeCliBackend(LLMBackend):
         return ("401" in s or "unauthorized" in s
                 or "authenticat" in s)        # authenticate / authentication
 
-    def _argv(self, model: str, system: str) -> list[str]:
+    def _argv(self, model: str, system: str,
+              output_format: str = "json") -> list[str]:
         argv = [self.exe]
         if self.exe.lower().endswith((".cmd", ".bat")):
             argv = ["cmd", "/c", self.exe]      # CreateProcess can't run .cmd
@@ -103,9 +104,14 @@ class ClaudeCliBackend(LLMBackend):
         # the child inherited the user's "explanatory" output style and wrote
         # giant insight-block documents instead of contract JSON (reads as a
         # hang). The oracle must run with factory defaults.
-        argv += ["-p", "--output-format", "json", "--max-turns", "1",
+        argv += ["-p", "--output-format", output_format,
+                 "--max-turns", "1",
                  "--tools", "", "--setting-sources", "",
                  "--no-session-persistence"]
+        # stream-json needs --verbose to surface per-message events (empirical:
+        # without it the CLI buffers and emits only the terminal result line).
+        if output_format == "stream-json":
+            argv += ["--verbose"]
         if model:
             argv += ["--model", model]
         if system:
@@ -211,3 +217,131 @@ class ClaudeCliBackend(LLMBackend):
             meta={"session_id": data.get("session_id", ""),
                   "total_cost_usd": data.get("total_cost_usd", 0),
                   "num_turns": data.get("num_turns", 1)})
+
+    @staticmethod
+    def _stream_text_chunks(obj: dict) -> list[str]:
+        """Extract assistant TEXT deltas from one stream-json event. Returns []
+        for non-text events (system/result/tool/etc.). Truth-in-labeling: only
+        type=='text' content is generation; nothing here is reasoning."""
+        if not isinstance(obj, dict):
+            return []
+        if obj.get("type") != "assistant":
+            return []
+        msg = obj.get("message")
+        content = msg.get("content") if isinstance(msg, dict) else None
+        if not isinstance(content, list):
+            return []
+        out = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                t = block.get("text")
+                if isinstance(t, str) and t:
+                    out.append(t)
+        return out
+
+    def stream(self, system: str, user: str, *, on_event, model: str,
+               temperature: float, max_tokens: int, timeout_s: float,
+               kind: str = "") -> LLMResponse:
+        """Stream the CLI's GENERATION (not reasoning) via
+        ``--output-format stream-json --verbose``: spawn with Popen, write the
+        prompt over stdin, read stdout line by line, emit one ``text_delta`` per
+        assistant text chunk, and return the SAME LLMResponse :meth:`complete`
+        returns (the accumulated buffer IS the final text; usage comes from the
+        terminal result line). Best-effort observability: on ANY stream failure
+        — launch error, no result line, empty/garbled stream — fall back to the
+        blocking :meth:`complete`, so the VERIFIED result is always
+        authoritative (a stream hiccup can never corrupt it). NEVER emits
+        ``thinking_delta`` — the subscription CLI exposes no reasoning."""
+        token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "").strip()
+        env = {k: v for k, v in os.environ.items() if not _STRIP_RE.match(k)}
+        if token:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+        env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(max(int(max_tokens), 32000))
+        timeout = max(float(timeout_s), 45.0)
+        if model and model in self._rejected_models:
+            model = self.default_model
+        argv = self._argv(model, system, output_format="stream-json")
+
+        def _emit(ev: dict) -> None:
+            try:
+                on_event(ev)
+            except Exception:                                 # noqa: BLE001
+                pass     # the sink is best-effort; never let it abort the stream
+
+        t0 = time.perf_counter()
+        buf: list[str] = []
+        result_obj: dict | None = None
+        try:
+            proc = subprocess.Popen(
+                argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                errors="replace", env=env)
+        except OSError as exc:
+            log.warning("claude CLI stream failed to launch (%s); "
+                        "falling back to blocking complete()", exc)
+            fb = self.complete(system, user, model=model,
+                               temperature=temperature, max_tokens=max_tokens,
+                               timeout_s=timeout_s, kind=kind)
+            _emit({"type": "text_delta", "text": fb.text})
+            return fb
+        try:
+            try:
+                proc.stdin.write(user)
+                proc.stdin.close()
+            except (OSError, ValueError):
+                pass
+            for line in proc.stdout:
+                line = (line or "").strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue                     # tolerate non-JSON noise lines
+                if isinstance(obj, dict) and obj.get("type") == "result":
+                    result_obj = obj
+                    continue
+                for chunk in self._stream_text_chunks(obj):
+                    buf.append(chunk)
+                    _emit({"type": "text_delta", "text": chunk})
+            try:
+                proc.wait(timeout=timeout)
+            except Exception:                                 # noqa: BLE001
+                proc.kill()
+        except Exception as exc:                              # noqa: BLE001
+            log.warning("claude CLI stream read error (%s); falling back to "
+                        "blocking complete()", exc)
+            try:
+                proc.kill()
+            except Exception:                                 # noqa: BLE001
+                pass
+            return self.complete(system, user, model=model,
+                                 temperature=temperature, max_tokens=max_tokens,
+                                 timeout_s=timeout_s, kind=kind)
+        elapsed = time.perf_counter() - t0
+        # final text: prefer the authoritative result line; else the buffer.
+        final_text = ""
+        if result_obj is not None:
+            final_text = str(result_obj.get("result") or "")
+        if not final_text.strip():
+            final_text = "".join(buf)
+        if not final_text.strip():
+            # nothing usable streamed -> the blocking path is authoritative
+            log.warning("claude CLI stream produced no text; falling back to "
+                        "blocking complete()")
+            return self.complete(system, user, model=model,
+                                 temperature=temperature, max_tokens=max_tokens,
+                                 timeout_s=timeout_s, kind=kind)
+        usage = (result_obj or {}).get("usage") or {}
+        prompt_toks = int(usage.get("input_tokens", 0) or 0) \
+            + int(usage.get("cache_read_input_tokens", 0) or 0) \
+            + int(usage.get("cache_creation_input_tokens", 0) or 0)
+        return LLMResponse(
+            text=final_text, model=model or "cli-default", backend=self.name,
+            prompt_tokens=prompt_toks,
+            completion_tokens=int(usage.get("output_tokens", 0) or 0),
+            latency_s=elapsed,
+            meta={"session_id": (result_obj or {}).get("session_id", ""),
+                  "total_cost_usd": (result_obj or {}).get("total_cost_usd", 0),
+                  "num_turns": (result_obj or {}).get("num_turns", 1),
+                  "streamed": True})
