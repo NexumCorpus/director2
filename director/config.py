@@ -121,6 +121,18 @@ class Config:
         "arms": ["on", "off"], "reps": 5, "fault_scenario": "default",
         "model_pin": "claude-sonnet-4-6", "temperature": 0.0})
 
+    # --- gut markers (v2) -------------------------------------------------------
+    # Active only when nervous_enabled. Diagnoses-only: the model never sees a
+    # weight; trusted code computes every scar. First-guess constants, tuned via
+    # the bench (the same discipline that recalibrated the uncertainty axis).
+    marker_recall_sim: float = 0.6     # cosine to recall a scar for a task signature
+    marker_merge_sim: float = 0.9      # cosine to merge-and-strengthen vs insert
+    marker_repel_step: float = 0.5     # weight made more-repellent per recurrence
+    marker_repel_floor: float = -3.0   # clamp so one signature can't dominate
+    marker_defer_escalate_cycles: int = 3  # advisory deferrals before a packet
+    marker_digest_max: int = 3         # max markers recalled/injected per task
+    marker_store_path: str = ""        # "" -> cfg.memory_dir / "markers_index.json"
+
     # --- sandbox / grounding ----------------------------------------------------
     sandbox_timeout_s: float = 20.0
     sandbox_mem_cap_mb: int = 1024
