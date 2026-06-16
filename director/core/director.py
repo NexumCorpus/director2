@@ -47,6 +47,7 @@ from .types import (AgentRun, Artifact, AuditEvent, Charter, CommandOption,
                     ModuleStatus, ModuleType, PacketStatus, Project,
                     ResponseType, Risk, RiskLevel, StateDelta, Task,
                     TaskStatus, utcnow)
+from .valence import check_clear_rule, compute_body, evaluate_scream
 
 log = get_logger("director")
 
@@ -296,13 +297,15 @@ PACKET_SYSTEM = (
 class Director:
     def __init__(self, cfg: Config, store: ProjectStore, router: LLMRouter,
                  registry: VerifierRegistry, runner: SubAgentRunner,
-                 *, lessons=None):
+                 *, lessons=None, perf=None):
         self.cfg = cfg
         self.store = store
         self.router = router
         self.registry = registry
         self.runner = runner
         self.lessons = lessons                 # LessonLedger | None (memory pkg)
+        self.perf = perf                       # PerfLedger | None (run-scoped token burn)
+        self._run_since = None                 # perf.stats(since=...) anchor for this run
 
     # ------------------------------------------------------------------ audit
     def _audit(self, project: Project, type_: str, summary: str,
@@ -712,7 +715,7 @@ class Director:
 
     # --------------------------------------------------------------- advance
     def advance(self, project_ref: str, *, max_tasks: int | None = None,
-                force: bool = False) -> dict:
+                force: bool = False, autonomous: bool = False) -> dict:
         """One bounded work cycle: dispatch ready tasks to parallel verified
         subagents and ingest the results. Stops (unless force) while a command
         packet is open — human command outranks autonomy."""
@@ -723,6 +726,21 @@ class Director:
                     "summary": f"{len(open_pkts)} command packet(s) open - "
                                f"decide first or use force",
                     "packets": [p.id for p in open_pkts], "ran": 0}
+
+        # latch halt: a held scream stops AUTONOMOUS work (and the
+        # decide()->advance auto-advance path); a human-commanded advance is
+        # exempt and drives recovery. held_cycles advances each hop so the
+        # deadlock guard has a concrete value.
+        if (self.cfg.nervous_enabled and autonomous and project.scream_open
+                and not force):
+            sc = project.scream_open
+            sc["held_cycles"] = int(sc.get("held_cycles", 0)) + 1
+            self.store.save(project)
+            return {"status": "latched",
+                    "summary": f"SCREAM held ({sc['cause']}); "
+                               f"held_cycles={sc['held_cycles']} - "
+                               f"clear: {sc.get('clear_rule', '')}",
+                    "scream": dict(sc), "ran": 0}
 
         # Recover tasks stranded RUNNING by a crash in a prior advance: nothing
         # promotes RUNNING automatically, so reset them for retry.
@@ -823,6 +841,9 @@ class Director:
                          f"emphasis before further work.")
                 new_packets.append(pkt.id)
 
+        if self.cfg.nervous_enabled:
+            self._nervous_pass(project, autonomous=autonomous)
+
         self.store.save(project)
         summary = (f"{done} done, {failed} failed, {needs_human} need review, "
                    f"{len(new_packets)} new packet(s)")
@@ -831,6 +852,61 @@ class Director:
                 "done": done, "failed": failed, "needs_human": needs_human,
                 "new_packets": new_packets,
                 "milestones_reached": [m.name for m in reached]}
+
+    # ---------------------------------------------------------- nervous pass
+    def _nervous_pass(self, project: Project, *, autonomous: bool) -> None:
+        """Trusted valence pass: bump cycle_seq, recompute the Body, re-test an
+        open latch's clear rule, then evaluate the scream. Guarded entirely by
+        cfg.nervous_enabled so the OFF path never reaches here."""
+        project.cycle_seq += 1
+        secret = self.cfg.report_secret()
+        since = getattr(self, "_run_since", None)
+        body = compute_body(project, secret=secret, perf=self.perf,
+                            since=since, cfg=self.cfg)
+        project.body = body
+
+        if project.scream_open is not None:
+            if check_clear_rule(project, project.scream_open, secret=secret,
+                                perf=self.perf, since=since, cfg=self.cfg):
+                cause = project.scream_open["cause"]
+                self._audit(project, "scream.cleared",
+                            f"latch cleared: {cause} re-verified",
+                            {"cause": cause})
+                project.scream_open = None
+            else:
+                return
+
+        scream = evaluate_scream(project, body, cfg=self.cfg)
+        if scream is None:
+            return
+        if scream["level"] == "ache":
+            self._handle_ache(project, scream)
+        else:
+            self._handle_siren(project, scream, autonomous=autonomous)
+
+    def _handle_ache(self, project: Project, scream: dict) -> None:
+        self._audit(project, "scream.ache",
+                    f"ache on {scream['axis']}: {scream['report'][:200]}",
+                    {"axis": scream["axis"]})
+
+    def _handle_siren(self, project: Project, scream: dict, *,
+                      autonomous: bool) -> None:
+        report = scream["report"]
+        # a SCREAM is a halt-the-world interrupt: it outranks any routine
+        # packet (milestone/fork) raised earlier in this same advance, so the
+        # commander faces the latch alone, not a menu next to it. Supersede the
+        # in-flight ones before raising the siren packet.
+        for pk in self._open_packets(project):
+            pk.status = PacketStatus.SUPERSEDED
+        self._make_packet(project, trigger="scream:" + scream["cause"],
+                          hint=report, context_override=report)
+        project.scream_open = {
+            "cause": scream["cause"], "axis": scream["axis"],
+            "opened_at": project.cycle_seq, "held_cycles": 1,
+            "clear_rule": scream["clear_rule"], "origin_refs": []}
+        self._audit(project, "scream.siren",
+                    f"SCREAM ({scream['cause']}) - latch opened",
+                    {"cause": scream["cause"], "axis": scream["axis"]})
 
     def _spec_for(self, project: Project, task: Task) -> AgentSpec:
         """Build the bounded work order. Live finding (2026-06-12): a blind
