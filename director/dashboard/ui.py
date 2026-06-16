@@ -225,6 +225,8 @@ button.ghost:hover{color:var(--ink);background:var(--surface2)}
 .livegen .lgbody{white-space:pre-wrap;word-break:break-word;color:var(--dim);
   font-size:12.5px;margin:6px 0 0}
 .livegen .think{color:var(--pivot)}     /* dormant: reserved thinking_delta tier */
+.livegen .lgretry{display:block;color:var(--faint);font-size:11px;
+  text-align:center;margin:8px 0;opacity:.75}   /* honest retry separator */
 .cin{max-width:740px;margin:0 auto;display:flex;gap:9px;align-items:center}
 .cin input{flex:1;background:var(--surface);border:1px solid var(--line2);
   color:var(--ink);border-radius:10px;padding:11px 14px;font:inherit;
@@ -710,6 +712,12 @@ function openLiveGen(pid){
       pane.hidden=false;
       const s=document.createElement("span");s.className="think";
       s.textContent=d.text||"";body.appendChild(s);
+      pane.scrollTop=pane.scrollHeight;
+    }else if(d.type==="retry"){    /* honest: a draft failed validation, model is re-generating */
+      pane.hidden=false;
+      const s=document.createElement("span");s.className="lgretry";
+      s.textContent="— model retried (previous draft failed validation) —";
+      body.appendChild(s);
       pane.scrollTop=pane.scrollHeight;
     }else if(d.type==="done"){
       try{liveSrc.close();}catch(_){}

@@ -272,9 +272,13 @@ class ClaudeCliBackend(LLMBackend):
         buf: list[str] = []
         result_obj: dict | None = None
         try:
+            # stderr=STDOUT (not PIPE): the CLI under --verbose can fill an
+            # unread stderr pipe and deadlock the stdout read loop (H1). Merging
+            # stderr into stdout means the read loop drains BOTH; non-JSON noise
+            # lines are harmlessly skipped by the json.JSONDecodeError `continue`.
             proc = subprocess.Popen(
                 argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                 errors="replace", env=env)
         except OSError as exc:
             log.warning("claude CLI stream failed to launch (%s); "
@@ -284,6 +288,10 @@ class ClaudeCliBackend(LLMBackend):
                                timeout_s=timeout_s, kind=kind)
             _emit({"type": "text_delta", "text": fb.text})
             return fb
+        # try/finally guarantees the child is reaped and pipes closed on EVERY
+        # exit path (success, wall-clock fallback, read error) — no handle leak
+        # (H2). The read loop carries a wall-clock guard so a stalled child
+        # triggers kill+fallback instead of hanging.
         try:
             try:
                 proc.stdin.write(user)
@@ -291,6 +299,15 @@ class ClaudeCliBackend(LLMBackend):
             except (OSError, ValueError):
                 pass
             for line in proc.stdout:
+                if time.perf_counter() - t0 > timeout:
+                    # slow/stalled child: kill it and let the authoritative
+                    # blocking path produce the verified result.
+                    proc.kill()
+                    log.warning("claude CLI stream exceeded %.0fs; falling back "
+                                "to blocking complete()", timeout)
+                    return self.complete(
+                        system, user, model=model, temperature=temperature,
+                        max_tokens=max_tokens, timeout_s=timeout_s, kind=kind)
                 line = (line or "").strip()
                 if not line:
                     continue
@@ -304,20 +321,26 @@ class ClaudeCliBackend(LLMBackend):
                 for chunk in self._stream_text_chunks(obj):
                     buf.append(chunk)
                     _emit({"type": "text_delta", "text": chunk})
-            try:
-                proc.wait(timeout=timeout)
-            except Exception:                                 # noqa: BLE001
-                proc.kill()
         except Exception as exc:                              # noqa: BLE001
             log.warning("claude CLI stream read error (%s); falling back to "
                         "blocking complete()", exc)
             try:
                 proc.kill()
+                proc.wait(timeout=5)
             except Exception:                                 # noqa: BLE001
                 pass
             return self.complete(system, user, model=model,
                                  temperature=temperature, max_tokens=max_tokens,
                                  timeout_s=timeout_s, kind=kind)
+        finally:
+            # reap on the success path (and after any return above): if the
+            # child is still alive, kill it; always wait so no zombie/pipe leaks.
+            try:
+                if proc.poll() is None:
+                    proc.kill()
+                proc.wait(timeout=5)
+            except Exception:                                 # noqa: BLE001
+                pass
         elapsed = time.perf_counter() - t0
         # final text: prefer the authoritative result line; else the buffer.
         final_text = ""

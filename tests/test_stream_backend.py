@@ -127,6 +127,23 @@ def test_claude_stream_uses_stream_json_argv(monkeypatch):
     assert argv[argv.index("--tools") + 1] == ""
 
 
+def test_claude_stream_merges_stderr_into_stdout(monkeypatch):
+    # H1: an unread stderr=PIPE deadlocks the read loop when the CLI's stderr
+    # buffer fills under --verbose. Merging stderr into stdout drains it in the
+    # one read loop, so non-JSON noise is harmlessly skipped.
+    seen = {}
+
+    def fake_popen(argv, **kw):
+        seen["kwargs"] = kw
+        return _FakeProc(_stream_lines(["ok"]))
+
+    monkeypatch.setattr(claude_cli.subprocess, "Popen", fake_popen)
+    b = ClaudeCliBackend(exe=r"C:\fake\claude.exe")
+    b.stream("S", "U", on_event=lambda e: None, model="", temperature=0,
+             max_tokens=64, timeout_s=60, kind="")
+    assert seen["kwargs"]["stderr"] is subprocess.STDOUT
+
+
 def test_claude_stream_tolerates_garbage_lines(monkeypatch):
     lines = ["not json\n"] + _stream_lines(["A", "B"])
     monkeypatch.setattr(claude_cli.subprocess, "Popen",
@@ -203,3 +220,41 @@ def test_stream_structured_returns_validated_schema_type():
                               on_event=lambda e: None, role="director",
                               kind="initial_plan")
     assert isinstance(out, PlanOut) and out.tasks
+
+
+class _RetryStub(MockBackend):
+    """First stream() returns invalid JSON (forces the router's one feedback
+    retry); the second delegates to the mock fixture (valid PlanOut)."""
+    def __init__(self):
+        super().__init__()
+        self._n = 0
+
+    def stream(self, system, user, *, on_event, model, temperature,
+               max_tokens, timeout_s, kind=""):
+        self._n += 1
+        if self._n == 1:
+            text = "this is not json at all"
+            try:
+                on_event({"type": "text_delta", "text": text})
+            except Exception:
+                pass
+            return LLMResponse(text=text, model=self.default_model,
+                               backend=self.name, prompt_tokens=1,
+                               completion_tokens=1, latency_s=0.0)
+        return super().stream(system, user, on_event=on_event, model=model,
+                              temperature=temperature, max_tokens=max_tokens,
+                              timeout_s=timeout_s, kind=kind)
+
+
+def test_stream_structured_emits_one_retry_boundary(monkeypatch):
+    # M1: a schema-retry streams a SECOND full generation into the same pane;
+    # the router must emit exactly one {"type":"retry"} boundary so the UI can
+    # show a separator instead of silently concatenating two drafts.
+    r = LLMRouter(Config(validation_retries=1), backends={"mock": _RetryStub()})
+    events = []
+    out = r.stream_structured("SYS", "objective: retry me", PlanOut,
+                              on_event=events.append, role="director",
+                              kind="initial_plan")
+    assert isinstance(out, PlanOut) and out.tasks       # second attempt validated
+    retries = [e for e in events if e.get("type") == "retry"]
+    assert len(retries) == 1

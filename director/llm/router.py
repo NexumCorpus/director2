@@ -244,6 +244,15 @@ class LLMRouter:
         attempt_user = user
         last_exc: Exception | None = None
         for attempt in range(self.cfg.validation_retries + 1):
+            if attempt > 0:
+                # a RETRY streams a second full generation into the same pane;
+                # emit an explicit boundary so the UI shows a separator instead
+                # of silently concatenating two drafts (M1). Best-effort: never
+                # let the sink abort the retry.
+                try:
+                    on_event({"type": "retry"})
+                except Exception:                             # noqa: BLE001
+                    pass
             resp = self._stream_complete(sys_prompt, attempt_user, role=role,
                                          kind=kind, profile=profile,
                                          on_event=on_event)

@@ -88,6 +88,22 @@ def test_sse_route_yields_deltas_then_sentinel(live):
     assert payloads[-1]["type"] == "done"        # closed on the terminal sentinel
 
 
+def test_sse_missing_key_fast_exits(live):
+    # M3b: a stream request for a key that has NO buffer and no in-flight 'new'
+    # op must fast-exit with a single done event, NOT poll to the 600s deadline.
+    # A 5s urlopen timeout completing (not raising) proves it doesn't hang.
+    hub, base = live
+    t0 = time.time()
+    with urllib.request.urlopen(base + "/api/project/never-used-xyz/stream",
+                                timeout=5) as r:
+        assert r.headers.get("Content-Type", "").startswith("text/event-stream")
+        body = r.read().decode("utf-8")
+    assert time.time() - t0 < 5             # returned promptly, did not hang
+    payloads = [json.loads(ln[len("data:"):].strip())
+                for ln in body.splitlines() if ln.startswith("data:")]
+    assert payloads[-1] == {"type": "done"}
+
+
 # ----------------------------------------------------------------- UI pane
 def test_ui_has_live_generation_pane_and_eventsource():
     low = INDEX_HTML.lower()

@@ -366,16 +366,31 @@ class _Handler(BaseHTTPRequestHandler):
         Read-only over the buffer (the sink is the only writer)."""
         key = pid
         # the in-flight new-project op streams under "new"; route a request for
-        # the still-unnamed project (or the literal 'new' key) onto it
+        # the still-unnamed project (or the literal 'new' key) onto it. Read
+        # BOTH _streams and _op["kind"] under the SAME lock (L1) so the routing
+        # decision sees a consistent snapshot.
         with self.hub._lock:
             has_pid = key in self.hub._streams
-        if not has_pid and self.hub._op.get("kind") == "new":
+            op_is_new = self.hub._op.get("kind") == "new"
+        if not has_pid and op_is_new:
             key = "new"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "close")
         self.end_headers()
+        # M3b: no buffer for this key AND no in-flight 'new' op to ever populate
+        # one (key was NOT rerouted onto 'new') — there is nothing to read, so
+        # fast-exit with a single done event instead of polling to the 600s
+        # deadline. When op_is_new the key was rerouted to 'new', whose buffer
+        # is populated lazily by _create, so we fall through and poll for it.
+        if not has_pid and not op_is_new:
+            try:
+                self.wfile.write(b"data: {\"type\": \"done\"}\n\n")
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            return
         cursor = 0
         deadline = time.time() + 600          # hard cap: never hang a thread forever
         try:
@@ -444,10 +459,14 @@ class _Handler(BaseHTTPRequestHandler):
                 if not name or not objective:
                     self._send(400, {"error": "name and objective required"})
                     return
-                self.hub._reset_stream("new")
-                sink = self.hub._make_stream_sink("new")
-
                 def _create():
+                    # reset + sink INSIDE the op gate (M2): start_background
+                    # returns 409 if a 'new' op is already running, so a 2nd
+                    # concurrent create must NOT wipe the in-flight run's buffer.
+                    # Only the request that actually acquires the gate touches
+                    # _streams["new"].
+                    self.hub._reset_stream("new")
+                    sink = self.hub._make_stream_sink("new")
                     try:
                         proj, _ = self.hub.director.new_project(
                             name, objective, on_event=sink)
