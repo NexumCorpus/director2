@@ -192,6 +192,72 @@ class LLMRouter:
         assert last_exc is not None
         raise last_exc
 
+    def _stream_complete(self, system: str, user: str, *, role: str, kind: str,
+                         profile: ModelProfile | None, on_event
+                         ) -> LLMResponse:
+        """Free-text completion that threads ``on_event`` to the backend's
+        :meth:`stream`, with the SAME failover/timeout/recording as
+        :meth:`complete`. Best-effort: if a backend's stream raises, record the
+        failure and fail over exactly like complete() would — the caller's
+        retry/validate path stays authoritative."""
+        prof = profile or self.profile_for(role)
+        eff_timeout = self.cfg.kind_timeout(kind) if kind else prof.timeout_s
+        from ..config import FAST_KINDS
+        fast = bool(self.cfg.fast_model) and kind in FAST_KINDS
+        errors: list[str] = []
+        for name in self._chain():
+            backend = self.backends[name]
+            model = self.cfg.fast_model if fast else backend.resolve_model(prof)
+            try:
+                resp = backend.stream(
+                    system, user, on_event=on_event, model=model,
+                    temperature=prof.temperature, max_tokens=prof.max_tokens,
+                    timeout_s=eff_timeout, kind=kind)
+                self._record(kind=kind, role=role, resp=resp, ok=True)
+                return resp
+            except ModelError as exc:
+                errors.append(f"{name}: {type(exc).__name__}: {exc}")
+                self._record(kind=kind, role=role, ok=False, backend=name,
+                             model=model, error=f"{type(exc).__name__}: {exc}")
+                self._quarantine_if_dead(name, exc)
+                log.warning("backend %s stream failed for kind=%s: %s",
+                            name, kind, exc)
+        raise ModelError("all backends failed (stream): " + " | ".join(errors))
+
+    def stream_structured(self, system: str, user: str, schema: Type[BaseModel],
+                          *, on_event=None, role: str = "director",
+                          kind: str = "",
+                          profile: ModelProfile | None = None) -> BaseModel:
+        """Streaming twin of :meth:`structured`. IDENTICAL backend selection,
+        prompt assembly, one-feedback-retry, and final parse/validate (shares
+        :meth:`_validate_reply`, so coercion can NEVER diverge from structured()).
+        The ONLY difference is a side-channel of generation deltas: ``on_event``
+        is threaded to the backend's :meth:`stream`. With ``on_event=None`` (no
+        sink) it delegates straight to :meth:`structured` — zero overhead, byte-
+        identical. Truth-in-labeling: the deltas are GENERATION, never reasoning;
+        the validated result is exactly what structured() would return."""
+        if on_event is None:
+            return self.structured(system, user, schema, role=role, kind=kind,
+                                   profile=profile)
+        sys_prompt = system + JSON_CONTRACT + \
+            "\n\nJSON SCHEMA (informal):\n" + _schema_sketch(schema)
+        attempt_user = user
+        last_exc: Exception | None = None
+        for attempt in range(self.cfg.validation_retries + 1):
+            resp = self._stream_complete(sys_prompt, attempt_user, role=role,
+                                         kind=kind, profile=profile,
+                                         on_event=on_event)
+            try:
+                return self._validate_reply(resp, schema, kind)
+            except (ModelParseError, ModelValidationError) as exc:
+                last_exc = exc
+            if attempt < self.cfg.validation_retries:
+                attempt_user = self._retry_user(user, last_exc)
+                log.info("stream_structured retry for kind=%s after: %s",
+                         kind, last_exc)
+        assert last_exc is not None
+        raise last_exc
+
     # ------------------------------------------------------------------- async
     async def acomplete(self, system: str, user: str, *, role: str = "director",
                         kind: str = "",

@@ -162,3 +162,44 @@ def test_claude_stream_falls_back_to_complete_on_launch_error(monkeypatch):
     assert resp.text == "FALLBACK"
     # the base-default-style single delta is emitted from the fallback text
     assert [e["text"] for e in events if e.get("type") == "text_delta"] == ["FALLBACK"]
+
+
+# ---------------------------------------------------- router stream_structured
+from director.core.director import PlanOut  # noqa: E402
+from director.llm.router import LLMRouter  # noqa: E402
+
+
+def _router_mock():
+    return LLMRouter(Config(), backends={"mock": MockBackend()})
+
+
+def test_stream_structured_mock_emits_one_delta_and_matches_structured():
+    r = _router_mock()
+    events = []
+    a = r.stream_structured("SYS", "objective: build x", PlanOut,
+                            on_event=events.append, role="director",
+                            kind="initial_plan")
+    b = r.structured("SYS", "objective: build x", PlanOut, role="director",
+                     kind="initial_plan")
+    # identical validated schema (same fixture) — only the side-channel differs
+    assert a.model_dump() == b.model_dump()
+    deltas = [e for e in events if e.get("type") == "text_delta"]
+    assert len(deltas) == 1 and deltas[0]["text"]   # mock -> one whole-result delta
+    assert not any(e.get("type") == "thinking_delta" for e in events)
+
+
+def test_stream_structured_none_sink_routes_to_structured():
+    r = _router_mock()
+    out = r.stream_structured("SYS", "objective: y", PlanOut, on_event=None,
+                              role="director", kind="initial_plan")
+    ref = r.structured("SYS", "objective: y", PlanOut, role="director",
+                       kind="initial_plan")
+    assert out.model_dump() == ref.model_dump()
+
+
+def test_stream_structured_returns_validated_schema_type():
+    r = _router_mock()
+    out = r.stream_structured("SYS", "objective: z", PlanOut,
+                              on_event=lambda e: None, role="director",
+                              kind="initial_plan")
+    assert isinstance(out, PlanOut) and out.tasks
