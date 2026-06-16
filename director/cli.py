@@ -76,10 +76,19 @@ class Services:
         return current
 
 
-def _services() -> Services:
+def _services(backend: str = "") -> Services:
     ctx = click.get_current_context()
     if not isinstance(ctx.obj, Services):
+        # explicit --backend wins before services are built, so a blanked
+        # environment can't silently defeat a deliberate live selection
+        # (claude_cli stays explicit-only; never autodetected). Set it in the
+        # environment too so any nested Config.from_env() agrees.
+        if backend:
+            import os as _os
+            _os.environ["DIRECTOR_BACKEND"] = backend
         ctx.obj = Services()
+        if backend:
+            ctx.obj.cfg.backend = backend
     return ctx.obj
 
 
@@ -133,9 +142,11 @@ def init() -> None:
 @main.command()
 @click.argument("name")
 @click.option("--objective", "-o", required=True, help="What to achieve.")
-def new(name: str, objective: str) -> None:
+@click.option("--backend", default="",
+              help="Explicit backend (e.g. claude_cli) — overrides autodetect.")
+def new(name: str, objective: str, backend: str) -> None:
     """Create a project: charter, modules, task graph, first command packet."""
-    svc = _services()
+    svc = _services(backend)
     project, packet = svc.director.new_project(name, objective)
     click.echo(f"project {project.id} '{name}' created: "
                f"{len(project.modules)} modules, {len(project.tasks)} tasks, "
@@ -640,13 +651,19 @@ def hooks_add(hook: str, project: str | None) -> None:
               help="Open the bridge in your browser.")
 @click.option("--seed-demo", is_flag=True,
               help="(Re)create the zero-quota DEMO campaign first.")
-def dashboard(port: int, open_browser: bool, seed_demo: bool) -> None:
+@click.option("--backend", default="",
+              help="Explicit backend (e.g. claude_cli) — overrides autodetect.")
+def dashboard(port: int, open_browser: bool, seed_demo: bool,
+              backend: str) -> None:
     """Launch the Command Bridge: live operations view + command-packet
     decisions at http://127.0.0.1:<port>/ (same JSON API agents can drive)."""
     from .dashboard import run_dashboard
+    if backend:
+        import os as _os
+        _os.environ["DIRECTOR_BACKEND"] = backend
     if seed_demo:
         from .dashboard.demo import seed_demo as _seed
-        svc = _services()
+        svc = _services(backend)
         pid = _seed(svc.store)
         click.secho(f"seeded DEMO campaign {pid}", fg="green")
     click.secho(f"Command Bridge -> http://127.0.0.1:{port}/", fg="cyan",
