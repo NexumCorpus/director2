@@ -85,3 +85,23 @@ def test_off_path_writes_no_scar(cfg):
     boss.store.save(p)
     boss.advance(p.id, autonomous=False)
     assert boss.markers.recall(task_signature(t)) == []   # markers untouched OFF
+
+
+def test_siren_strengthens_scars_for_failed_signatures(cfg):
+    import director.core.director as dmod
+    from director.core.types import BodyState
+    boss = _boss(cfg, _FailRunner())
+    p = Project(name="ck4")
+    t = Task(title="Implement add", role="code", module_id="m1",
+             objective="implement add(a,b)", status=TaskStatus.FAILED, max_attempts=1)
+    t.error = "add() returned a-b not a+b"
+    p.tasks = {t.id: t}
+    p.body = BodyState(accumulated_damage=1.0, valence=-0.44,
+                       provenance={"risk_ids": []})
+    scream = {"level": "siren", "cause": "grounding_damage",
+              "axis": "accumulated_damage", "clear_rule": "x",
+              "report": "trusted damage report"}
+    boss._handle_siren(p, scream, autonomous=True)
+    scars = boss.markers.recall(task_signature(t))
+    assert scars and scars[0].cause == "grounding_damage"   # tagged with the siren cause
+    assert scars[0].count >= 1

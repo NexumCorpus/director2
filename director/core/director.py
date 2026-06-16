@@ -1073,6 +1073,11 @@ class Director:
         failed_ids = [t.id for t in project.tasks.values()
                       if t.status is TaskStatus.FAILED]
         origin_refs = list(dict.fromkeys(risk_ids + failed_ids))
+        if self.cfg.nervous_enabled and self.markers is not None:
+            for tid in failed_ids:
+                ft = project.tasks.get(tid)
+                if ft is not None:
+                    self._record_scar(project, ft, cause=cause)
         opened_severity = float(getattr(project.body, "accumulated_damage", 0.0)
                                 if project.body else 0.0)
         project.scream_open = {
