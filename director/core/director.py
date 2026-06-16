@@ -762,7 +762,10 @@ class Director:
 
         refresh_statuses(project)
         limit = max_tasks or self.cfg.max_tasks_per_advance
-        batch = ready_tasks(project, limit=limit)
+        if self.cfg.nervous_enabled and self.markers is not None:
+            batch = self._advisory_batch(project, limit)
+        else:
+            batch = ready_tasks(project, limit=limit)
         if not batch:
             self.store.save(project)
             return {"status": "idle", "summary": "no ready tasks", "ran": 0}
@@ -932,6 +935,40 @@ class Director:
         if not ready and not running:
             return "drained"
         return None
+
+    # ------------------------------------------------------------- gut markers
+    def _advisory_batch(self, project: Project, limit: int) -> list[Task]:
+        """Advisory re-rank of the FULL ready frontier by prior-pain repel, WITHOUT
+        mutating the canonical (created_at, id) sort. Least-repelled first; the
+        front `limit` dispatch, the rest defer (and may escalate). Diagnoses drive
+        the model; the weight stays trusted-only."""
+        from ..memory.markers import task_signature
+        frontier = ready_tasks(project)        # all READY, canonical order
+        scored = []
+        for i, t in enumerate(frontier):
+            repel = sum(m.weight for m in self.markers.recall(
+                task_signature(t), min_sim=self.cfg.marker_merge_sim))
+            scored.append((repel, i, t))        # repel <= 0; i = canonical tiebreak
+        scored.sort(key=lambda x: (-x[0], x[1]))   # least-repelled (repel desc) first
+        batch = [t for _, _, t in scored[:limit]]
+        deferred = [t for _, _, t in scored[limit:]]
+        self._note_deferrals(project, batch, deferred)
+        return batch
+
+    def _note_deferrals(self, project: Project, batch, deferred) -> None:
+        for t in batch:                          # dispatched -> reset its counter
+            project.marker_deferrals.pop(t.id, None)
+        for t in deferred:
+            n = project.marker_deferrals.get(t.id, 0) + 1
+            project.marker_deferrals[t.id] = n
+            if (n > self.cfg.marker_defer_escalate_cycles
+                    and not self._open_packets(project)):
+                self._make_packet(
+                    project, trigger="markers:deferred:" + t.id,
+                    hint=(f"Task '{t.title}' (role {t.role}) has been deferred "
+                          f"{n} cycles by prior-pain markers. Commander decision: "
+                          f"persevere, drop, or re-scope."))
+                project.marker_deferrals[t.id] = 0      # reset after escalating
 
     # ----------------------------------------------------------- credit knife
     def _record_scar(self, project: Project, task: Task, *, cause: str) -> None:
