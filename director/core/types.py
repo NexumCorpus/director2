@@ -384,6 +384,24 @@ class Lesson:
 
 
 @dataclass
+class BodyState:
+    """Trusted valence projection recomputed each cycle (NEVER mutated in
+    place; recreated by the Body reducer). Not frozen — this file has no frozen
+    dataclasses; immutability here is by discipline. EVERY field is defaulted so
+    decode() of an older/partial snapshot can never raise. The float | str union
+    fields resolve "insufficient" to the STR arm (decode tries float() first; it
+    raises ValueError on the sentinel and falls through to str)."""
+    charter_integrity: float | str = "insufficient"   # severity 0..1, or "insufficient"
+    accumulated_damage: float = 0.0                    # severity 0..1
+    uncertainty: float = 0.0                           # severity 0..1
+    resource_bleed: float | str = "insufficient"       # severity 0..1, or "insufficient"
+    valence: float = 0.0                               # composite, [-1, 0]
+    fragile_axes: list[str] = field(default_factory=list)
+    computed_at: int = 0                               # cycle_seq, NOT wall-clock
+    provenance: dict = field(default_factory=dict)     # {risk_ids:[...], run_ids:[...]} pointers
+
+
+@dataclass
 class Project:
     name: str
     id: str = field(default_factory=new_id)
@@ -399,6 +417,12 @@ class Project:
     packets: dict[str, CommandPacket] = field(default_factory=dict)
     decisions: dict[str, DecisionEvent] = field(default_factory=dict)
     deltas: dict[str, StateDelta] = field(default_factory=dict)
+    # --- nervous-system v1 (inert data until the Body reads it) -------------
+    body: BodyState | None = None              # trusted valence projection, recomputed per cycle
+    scream_open: dict | None = None            # the latch: {cause, axis, opened_at, held_cycles, clear_rule, origin_refs} or None
+    cycle_seq: int = 0                         # deterministic per-advance counter (NOT wall-clock)
+    milestone_reverts: int = 0                 # charter_integrity signal (incremented at the revert log site)
+    coherence_blocks: int = 0                  # charter_integrity signal (incremented where a delta is blocked)
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
 
