@@ -183,6 +183,8 @@ class Config:
             log_level=os.environ.get("DIRECTOR_LOG_LEVEL", "INFO").strip().upper() or "INFO",
             stream_generation=os.environ.get(
                 "DIRECTOR_STREAM_GENERATION", "").strip().lower() in _TRUTHY,
+            nervous_enabled=os.environ.get(
+                "DIRECTOR_NERVOUS_ENABLED", "").strip().lower() in _TRUTHY,
         )
         if os.environ.get("DIRECTOR_AUTO_ADVANCE", "").strip().lower() in _TRUTHY:
             cfg.auto_advance_after_decision = True

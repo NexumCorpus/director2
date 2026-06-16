@@ -91,8 +91,17 @@ class BridgeHub:
             lessons = LessonLedger(self.cfg)
             runner = SubAgentRunner(self.cfg, router, registry,
                                     lessons_digest=lessons.digest())
+            # nervous-system v2 needs the MarkerStore wired or every Credit
+            # Knife / Gut Markers hook is inert (guarded by self.markers is not
+            # None). Mirror the CLI service wiring: construct it only when
+            # nervous_enabled (else None -> OFF byte-identical, no store touched).
+            markers = None
+            if self.cfg.nervous_enabled:
+                from ..memory.markers import MarkerStore
+                markers = MarkerStore(self.cfg)
             director = Director(self.cfg, self.store, router, registry,
-                                runner, lessons=lessons)
+                                runner, lessons=lessons, perf=self.perf,
+                                markers=markers)
         self.director = director
         self._lock = threading.Lock()
         self._op = {"running": False, "kind": "", "project": "",
