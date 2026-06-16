@@ -89,6 +89,35 @@ def test_precedence_charter_breach_beats_grounding_damage(cfg):
     assert scream["cause"] == "charter_breach"
 
 
+def test_report_never_leaks_numeric_valence_threshold_or_weight(cfg):
+    """Constitution (b) — problems, not rubrics — enforced mechanically: for
+    every scream cause (ache / grounding siren / charter_breach / tamper) the
+    trusted report must NOT contain the stringified numeric valence, threshold
+    or weight values that would turn a diagnosis back into a rubric."""
+    p = Project(name="rubric-scrub")
+    cases = [
+        _body(valence=-0.45, accumulated_damage=0.5),                    # ache
+        _body(valence=-0.80, accumulated_damage=0.9),                    # siren
+        _body(valence=-0.10, charter_integrity=0.95),                    # charter
+        _body(valence=-0.02, provenance={"integrity_violations": 1}),    # tamper
+    ]
+    # the declared numeric knobs that must never surface verbatim in a report
+    forbidden = {
+        str(cfg.ache_threshold), str(cfg.siren_threshold),               # -0.33 / -0.66
+        str(cfg.charter_breach_threshold),                               # 0.90
+        *(str(w) for w in cfg.valence_weights.values()),                 # 0.40 / 0.30 ...
+        "-0.45", "-0.80", "-0.10", "-0.02",                              # per-case valences
+    }
+    for body in cases:
+        scream = evaluate_scream(p, body, cfg=cfg)
+        assert scream is not None
+        report = scream["report"]
+        for token in forbidden:
+            assert token not in report, (
+                f"report leaked numeric '{token}': {report!r}")
+        assert "valence" not in report.lower()
+
+
 def test_clear_rule_string_present_for_each_cause(cfg):
     p = Project(name="rules")
     for kw, expect in [

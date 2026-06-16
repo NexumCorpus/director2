@@ -9,8 +9,7 @@ from director.agents.runner import SubAgentRunner
 from director.core.director import Director
 from director.core.state import ProjectStore
 from director.core.taskgraph import ready_tasks
-from director.core.types import (BodyState, PacketStatus, ResponseType,
-                                  TaskStatus)
+from director.core.types import BodyState, PacketStatus, TaskStatus
 from director.llm.mock import MockBackend
 from director.llm.router import LLMRouter
 from director.verify import make_default_registry
@@ -119,21 +118,27 @@ def test_deadlock_escalation_past_max_held_cycles(boss, monkeypatch):
     monkeypatch.setattr(dmod, "check_clear_rule", lambda *a, **k: False)
     project, packet = boss.new_project("dead", "objective")
     boss.decide(project.id, packet.id, option_key="A")
+    boss.advance(project.id, autonomous=True)        # open latch (held_cycles=1)
+    assert boss.store.load(project.id).scream_open is not None
 
-    def _defer_open_siren():
-        # the held latch raises (and re-raises) a PRESENTED siren packet that the
-        # open-packet gate would trip first, short-circuiting the latch gate.
-        # Defer it (mirror test_latch_state_machine) so each subsequent
-        # autonomous advance reaches the latch and held_cycles climbs.
+    def _ready_a_task():
+        # ensure each recovery hop dispatches a batch (else advance() returns
+        # "idle" BEFORE _nervous_pass and no held cycle is counted).
         p = boss.store.load(project.id)
-        for pk in p.packets.values():
-            if pk.status is PacketStatus.PRESENTED:
-                boss.decide(project.id, pk.id, response=ResponseType.DEFER)
+        next(iter(p.tasks.values())).status = TaskStatus.READY
+        boss.store.save(p)
 
-    boss.advance(project.id, autonomous=True)  # open latch (held_cycles=1)
-    _defer_open_siren()
-    boss.advance(project.id, autonomous=True)  # held_cycles=2
-    _defer_open_siren()
-    boss.advance(project.id, autonomous=True)  # held_cycles=3 > max_held_cycles
+    # climb held_cycles via human RECOVERY hops: force bypasses the open-packet
+    # and latch gates and runs _nervous_pass, which now owns the held_cycles
+    # increment + deadlock escalation (FIX 4). The fault is STILL present
+    # (check_clear_rule monkeypatched to False), so the latch never clears.
+    for _ in range(5):
+        p = boss.store.load(project.id)
+        if int(p.scream_open["held_cycles"]) > boss.cfg.max_held_cycles:
+            break
+        _ready_a_task()
+        boss.advance(project.id, autonomous=False, force=True)
+
     p = boss.store.load(project.id)
+    assert int(p.scream_open["held_cycles"]) > boss.cfg.max_held_cycles
     assert any(e.type == "scream.deadlock" for e in boss.store.journal(p.id))

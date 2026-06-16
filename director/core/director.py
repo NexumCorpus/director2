@@ -731,34 +731,18 @@ class Director:
 
         # latch halt: a held scream stops AUTONOMOUS work (and the
         # decide()->advance auto-advance path); a human-commanded advance is
-        # exempt and drives recovery. held_cycles advances each hop so the
-        # deadlock guard has a concrete value.
+        # exempt and drives recovery. This gate is READ-ONLY on held_cycles: the
+        # autonomous loop merely HALTS here. The held_cycles increment and the
+        # deadlock escalation live in _nervous_pass's "latch still held" branch,
+        # which the human/force recovery hops actually run — that is where a held
+        # cycle is genuinely spent, so the deadlock guard is reachable (FIX 4).
         if (self.cfg.nervous_enabled and autonomous and project.scream_open
                 and not force):
             sc = project.scream_open
-            sc["held_cycles"] = int(sc.get("held_cycles", 0)) + 1
-            if (sc["held_cycles"] > self.cfg.max_held_cycles
-                    and not sc.get("escalated")):
-                sc["escalated"] = True
-                self._make_packet(
-                    project, trigger="scream:deadlock:" + sc["cause"],
-                    hint=(f"Latch on {sc['cause']} has held "
-                          f"{sc['held_cycles']} cycles past the limit - "
-                          f"unrecoverable; operator decision required."),
-                    context_override=(
-                        f"DEADLOCK: the {sc['cause']} scream has not cleared "
-                        f"after {sc['held_cycles']} held cycles. Trusted "
-                        f"re-verification ({sc.get('clear_rule', '')}) still "
-                        f"fails. Operator decision required."))
-                self._audit(project, "scream.deadlock",
-                            f"latch {sc['cause']} exceeded max_held_cycles "
-                            f"({self.cfg.max_held_cycles})",
-                            {"cause": sc["cause"],
-                             "held_cycles": sc["held_cycles"]})
             self.store.save(project)
             return {"status": "latched",
                     "summary": f"SCREAM held ({sc['cause']}); "
-                               f"held_cycles={sc['held_cycles']} - "
+                               f"held_cycles={sc.get('held_cycles', 0)} - "
                                f"clear: {sc.get('clear_rule', '')}",
                     "scream": dict(sc), "ran": 0}
 
@@ -886,18 +870,27 @@ class Director:
         since = utcnow().isoformat()
         started_at = time.monotonic()
         cycles = 0
-        while True:
-            project = self.store.load(project_ref)
-            reason = self.stop(project, perf=perf, since=since,
-                               cycles=cycles, started_at=started_at)
-            if reason is not None:
-                return {"status": "stopped", "stop_reason": reason,
-                        "cycles": cycles, "since": since}
-            if max_cycles is not None and cycles >= max_cycles:
-                return {"status": "stopped", "stop_reason": "max_cycles",
-                        "cycles": cycles, "since": since}
-            self.advance(project_ref, autonomous=autonomous)
-            cycles += 1
+        # thread `since` to the valence pass so resource_bleed/clear-rule see
+        # run-scoped tokens (perf.stats(since=since)), consistent with stop()'s
+        # budget_tokens. Save+restore so a nested/abnormal exit doesn't leak the
+        # anchor into a later, unrelated call.
+        prev_since = getattr(self, "_run_since", None)
+        self._run_since = since
+        try:
+            while True:
+                project = self.store.load(project_ref)
+                reason = self.stop(project, perf=perf, since=since,
+                                   cycles=cycles, started_at=started_at)
+                if reason is not None:
+                    return {"status": "stopped", "stop_reason": reason,
+                            "cycles": cycles, "since": since}
+                if max_cycles is not None and cycles >= max_cycles:
+                    return {"status": "stopped", "stop_reason": "max_cycles",
+                            "cycles": cycles, "since": since}
+                self.advance(project_ref, autonomous=autonomous)
+                cycles += 1
+        finally:
+            self._run_since = prev_since
 
     def stop(self, project: Project, *, perf, since,
              cycles: int = 0, started_at: float | None = None) -> str | None:
@@ -957,6 +950,12 @@ class Director:
                             {"cause": cause})
                 project.scream_open = None
             else:
+                # the latch is STILL held this cycle: count a held cycle and
+                # escalate-if-needed HERE (single owner). Each advance that runs
+                # _nervous_pass with the latch unresolved — the human/force
+                # recovery hops — spends a held cycle and can trip the deadlock
+                # guard. The autonomous halt-gate in advance() is read-only.
+                self._count_held_cycle(project)
                 return
 
         scream = evaluate_scream(project, body, cfg=self.cfg)
@@ -966,6 +965,33 @@ class Director:
             self._handle_ache(project, scream)
         else:
             self._handle_siren(project, scream, autonomous=autonomous)
+
+    def _count_held_cycle(self, project: Project) -> None:
+        """A held-latch recovery hop just ran the body and the clear rule still
+        FAILED. Count the held cycle and, the first time it exceeds
+        max_held_cycles, raise a one-shot deadlock packet + audit. Single owner
+        of the held_cycles lifecycle (the advance() halt-gate is read-only)."""
+        sc = project.scream_open
+        if sc is None:
+            return
+        sc["held_cycles"] = int(sc.get("held_cycles", 0)) + 1
+        if sc["held_cycles"] > self.cfg.max_held_cycles and not sc.get("escalated"):
+            sc["escalated"] = True
+            self._make_packet(
+                project, trigger="scream:deadlock:" + sc["cause"],
+                hint=(f"Latch on {sc['cause']} has held "
+                      f"{sc['held_cycles']} cycles past the limit - "
+                      f"unrecoverable; operator decision required."),
+                context_override=(
+                    f"DEADLOCK: the {sc['cause']} scream has not cleared "
+                    f"after {sc['held_cycles']} held cycles. Trusted "
+                    f"re-verification ({sc.get('clear_rule', '')}) still "
+                    f"fails. Operator decision required."))
+            self._audit(project, "scream.deadlock",
+                        f"latch {sc['cause']} exceeded max_held_cycles "
+                        f"({self.cfg.max_held_cycles})",
+                        {"cause": sc["cause"],
+                         "held_cycles": sc["held_cycles"]})
 
     def _handle_ache(self, project: Project, scream: dict) -> None:
         """An ache is a wince: record it (always) and inject AT MOST one bounded
@@ -1005,18 +1031,28 @@ class Director:
         # a SCREAM is a halt-the-world interrupt: it outranks any routine
         # packet (milestone/fork) raised earlier in this same advance, so the
         # commander faces the latch alone, not a menu next to it. Supersede the
-        # in-flight ones before raising the siren packet.
-        for pk in self._open_packets(project):
+        # in-flight ones before raising the siren packet — and audit the dropped
+        # ids so the lost decision points are observable, not silently swallowed.
+        superseded = self._open_packets(project)
+        for pk in superseded:
             pk.status = PacketStatus.SUPERSEDED
+        if superseded:
+            self._audit(project, "scream.superseded",
+                        f"siren superseded {len(superseded)} open packet(s)",
+                        {"packet_ids": [pk.id for pk in superseded]})
         self._make_packet(project, trigger="scream:" + cause, hint=report,
                           context_override=report)
+        # origin_refs = the UNION of the open grounding risk ids AND the
+        # currently-FAILED task ids (dedup, order-preserving). Both kinds of ref
+        # are directly re-verifiable by check_clear_rule's grounding_damage
+        # branch: risk ids live in project.risks, task ids in project.tasks. The
+        # earlier risk-OR-failed split left a risk-driven latch with ONLY risk
+        # ids, which the (old) deliverable re-pass could never resolve.
         risk_ids = list((project.body.provenance or {}).get("risk_ids", [])) \
             if project.body else []
-        if risk_ids:
-            origin_refs = risk_ids
-        else:
-            origin_refs = [t.id for t in project.tasks.values()
-                           if t.status is TaskStatus.FAILED]
+        failed_ids = [t.id for t in project.tasks.values()
+                      if t.status is TaskStatus.FAILED]
+        origin_refs = list(dict.fromkeys(risk_ids + failed_ids))
         opened_severity = float(getattr(project.body, "accumulated_damage", 0.0)
                                 if project.body else 0.0)
         project.scream_open = {
@@ -1483,6 +1519,10 @@ class Director:
             "failed_ids": [t.id for t in failed],
             "artifacts": len(project.artifacts),
             "next_action": next_action,
+            # `scream` and `health` are ALWAYS present in this dict but are None
+            # when nervous is OFF (a documented superset, not a feature flag).
+            # A caller must NOT read their mere presence as "nervous is on" —
+            # check the value (or cfg.nervous_enabled), not the key.
             "scream": scream,
             "health": health,
         }

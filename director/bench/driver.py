@@ -56,16 +56,23 @@ def _run_once(scenario: FaultScenario, *, nervous: bool, home: Path,
     # and a cycle counter just as Director.run() does, and pass them in.
     perf = getattr(director, "perf", None) or PerfLedger(cfg)
     since = utcnow().isoformat()
+    # run-scope the valence pass too: _nervous_pass reads director._run_since for
+    # perf.stats(since=...), so it must match the `since` we hand stop() (Director.run
+    # threads this same anchor). Without it the bleed axis would read LIFETIME tokens.
+    director._run_since = since
     cycle_count = 0
     cycles: list[dict] = []
     for _ in range(max_cycles):
         project = store.load(project.id)
         if director.stop(project, perf=perf, since=since, cycles=cycle_count):
             break
-        # faults key on the cycle the worker will run in: advance() increments
-        # cycle_seq before the valence pass, so the worker batch in THIS advance
-        # runs at cycle_seq+1 — stamp the runner to match.
-        runner.cycle_seq = project.cycle_seq + 1
+        # faults key on the driver's OWN monotonic cycle counter, NOT
+        # project.cycle_seq. cycle_seq only advances inside _nervous_pass
+        # (nervous-ON only), so keying on it would freeze the OFF arm at cycle 1
+        # — re-firing the cycle-1 fault forever and never the later-cycle faults,
+        # a confound. Stamping cycle_count+1 gives BOTH arms an identical
+        # (title, cycle_seq) fault timeline.
+        runner.cycle_seq = cycle_count + 1
         result = director.advance(project.id, autonomous=True)
         cycle_count += 1
         project = store.load(project.id)
@@ -87,6 +94,7 @@ def _run_once(scenario: FaultScenario, *, nervous: bool, home: Path,
         if result.get("status") in ("latched", "awaiting_command"):
             break       # a packet OR a held latch halted the autonomous loop
 
+    director._run_since = None      # this run's anchor is spent
     screams = [c for c in cycles if c["scream"]]
     return {
         "nervous": nervous,

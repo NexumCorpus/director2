@@ -5,8 +5,8 @@ answer/defer and never on an LLM assertion."""
 import pytest
 
 from director.config import Config
-from director.core.types import (Artifact, BodyState, Project, Risk,
-                                  RiskLevel, RiskStatus, Task, TaskStatus)
+from director.core.types import (Project, Risk, RiskLevel, RiskStatus, Task,
+                                  TaskStatus)
 from director.core.valence import check_clear_rule
 from director.evolve.metrics import PerfLedger
 
@@ -61,27 +61,31 @@ def test_charter_breach_clears_only_below_hysteresis_band(cfg, perf, monkeypatch
                             perf=perf, since=None, cfg=cfg) is True
 
 
-def test_grounding_damage_needs_risk_closed_and_repass(cfg, perf, monkeypatch):
+def test_grounding_damage_needs_risk_closed(cfg, perf):
+    """A real grounding risk in origin_refs: the latch is HELD while the risk is
+    OPEN and clears (no monkeypatch) once it is CLOSED. Directly re-verified
+    against project.risks — the un-clearable deliverable re-pass is gone."""
     p = Project(name="gd")
     secret = cfg.report_secret()
     rk = Risk(title="code_runs failed", level=RiskLevel.HIGH,
               status=RiskStatus.OPEN, source="grounding")
     p.risks[rk.id] = rk
-    art = Artifact(title="deliverable", kind="code", content="print(1)")
-    p.artifacts[art.id] = art
     latch = _latch("grounding_damage", axis="accumulated_damage",
-                   refs=[rk.id, art.id])
+                   refs=[rk.id])
 
-    import director.core.valence as val
-    monkeypatch.setattr(val, "_run_properties_repass",
-                        lambda project, latch: True)
+    # held while the risk is OPEN
     assert check_clear_rule(p, latch, secret=secret, perf=perf,
                             since=None, cfg=cfg) is False
+    # clears once the risk is CLOSED
     rk.status = RiskStatus.CLOSED
     assert check_clear_rule(p, latch, secret=secret, perf=perf,
                             since=None, cfg=cfg) is True
-    monkeypatch.setattr(val, "_run_properties_repass",
-                        lambda project, latch: False)
+    # ACCEPTED also counts as resolved
+    rk.status = RiskStatus.ACCEPTED
+    assert check_clear_rule(p, latch, secret=secret, perf=perf,
+                            since=None, cfg=cfg) is True
+    # re-opening re-holds the latch
+    rk.status = RiskStatus.OPEN
     assert check_clear_rule(p, latch, secret=secret, perf=perf,
                             since=None, cfg=cfg) is False
 

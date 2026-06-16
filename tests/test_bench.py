@@ -287,7 +287,9 @@ def _advance_until_siren(director, store, runner, pid, *, max_cycles=20):
             return project
         if director.stop(project, perf=perf, since=since, cycles=cycle_count):
             break
-        runner.cycle_seq = project.cycle_seq + 1
+        # stamp from the driver's OWN monotonic counter (mirror driver._run_once
+        # FIX 3) — not project.cycle_seq — so the fault timeline is arm-independent.
+        runner.cycle_seq = cycle_count + 1
         director.advance(pid, autonomous=True)
         cycle_count += 1
     return store.load(pid)

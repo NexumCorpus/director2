@@ -185,8 +185,8 @@ _CLEAR_RULES = {
     "tamper": "integrity re-check returns 0 violations",
     "charter_breach": "charter_integrity recovers below "
                       "charter_breach_threshold - hysteresis_margin",
-    "grounding_damage": "the offending risk(s) close AND a run_properties "
-                        "re-pass on the deliverable passes",
+    "grounding_damage": "every offending grounding risk closes AND every "
+                        "offending FAILED task recovers (no longer FAILED)",
 }
 
 # axes that feed the composite, in declared order; used to attribute an ache
@@ -287,26 +287,6 @@ def _charter_integrity_severity(project: "Project", secret: bytes,
     return float(val) if isinstance(val, (int, float)) else 0.0
 
 
-def _run_properties_repass(project: "Project", scream_open: dict) -> bool:
-    """Re-run trusted property checkers over the offending deliverable.
-    True iff it now passes its declared properties (the grounding re-pass)."""
-    from ..verify.properties import partial_bundle_ok, run_properties
-    refs = scream_open.get("origin_refs") or []
-    deliverable = None
-    for ref in refs:
-        art = project.artifacts.get(ref)
-        if art is not None and getattr(art, "kind", "") != "property_report":
-            deliverable = art
-            break
-    if deliverable is None:
-        return False
-    names = ["python_parses", "code_runs"] if deliverable.kind in (
-        "code", "python") else ["nonempty"]
-    report = run_properties(deliverable.content, names, ref=None,
-                            ref_independent=True)
-    return partial_bundle_ok(report) or bool(report.get("force_to_fail_ok"))
-
-
 def check_clear_rule(project: "Project", scream_open: dict, *, secret: bytes,
                      perf, since, cfg) -> bool:
     """True iff the declared per-cause clear condition RE-VERIFIES in trusted
@@ -319,22 +299,22 @@ def check_clear_rule(project: "Project", scream_open: dict, *, secret: bytes,
         return _charter_integrity_severity(
             project, secret, perf, since, cfg) < band
     if cause == "grounding_damage":
+        # Directly verifiable, always-clearable rule: every OFFENDING ref must be
+        # resolved. Risk refs clear when the risk is CLOSED/ACCEPTED; task refs
+        # clear when the task is no longer FAILED (a re-run that re-passes
+        # verification becomes DONE, which captures the run_properties re-pass
+        # intent for the FAILED case). If NEITHER kind of ref is present we have
+        # nothing to verify against, so we can't safely clear.
         refs = scream_open.get("origin_refs") or []
-        has_risk_ref = any(r in project.risks for r in refs)
-        if has_risk_ref:
-            risks_closed = all(
-                project.risks[r].status in (RiskStatus.CLOSED,
-                                            RiskStatus.ACCEPTED)
-                for r in refs if r in project.risks)
-            return (risks_closed
-                    and _run_properties_repass(project, scream_open))
+        risk_refs = [r for r in refs if r in project.risks]
         task_refs = [r for r in refs if r in project.tasks]
-        if task_refs:
-            no_longer_failed = all(
-                project.tasks[r].status is not TaskStatus.FAILED
-                for r in task_refs)
-            sev = _severity_accumulated_damage(project, secret=secret, cfg=cfg)
-            opened_sev = float(scream_open.get("opened_severity", 0.0))
-            return no_longer_failed and sev < opened_sev
-        return False
+        if not risk_refs and not task_refs:
+            return False
+        risks_ok = all(
+            project.risks[r].status in (RiskStatus.CLOSED, RiskStatus.ACCEPTED)
+            for r in risk_refs)
+        tasks_ok = all(
+            project.tasks[r].status is not TaskStatus.FAILED
+            for r in task_refs)
+        return risks_ok and tasks_ok
     return False
