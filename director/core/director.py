@@ -897,11 +897,19 @@ class Director:
 
     def stop(self, project: Project, *, perf, since,
              cycles: int = 0, started_at: float | None = None) -> str | None:
-        """The declared stop predicate, in precedence order (spec section 6).
-        Returns a stop-reason string, or None to keep looping. Pure read-only."""
+        """The declared stop predicate, in precedence order (spec section 6)."""
         running = any(t.status is TaskStatus.RUNNING
                       for t in project.tasks.values())
-        if not ready_tasks(project) and not running:
+        ready = ready_tasks(project)
+        # 4. done — every task done AND nothing runnable (NOT all-milestones,
+        # which is vacuously true with zero milestones -> would halt on cycle 0).
+        summary = graph_summary(project)
+        if (summary["done"] == summary["tasks_total"]
+                and summary["tasks_total"] > 0
+                and not ready and not running):
+            return "done"
+        # 5. work drained — covers the no-tasks / no-milestones case too.
+        if not ready and not running:
             return "drained"
         return None
 

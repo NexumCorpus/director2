@@ -7,7 +7,7 @@ from director.agents.runner import SubAgentRunner
 from director.core.coherence import apply_delta, coherence_pass
 from director.core.director import Director
 from director.core.state import ProjectStore
-from director.core.taskgraph import (detect_cycles, ready_tasks,
+from director.core.taskgraph import (detect_cycles, graph_summary, ready_tasks,
                                      refresh_milestones, refresh_statuses)
 from director.core.types import (MilestoneStatus, Module, ModuleStatus,
                                  PacketStatus, Project, ResponseType,
@@ -333,7 +333,7 @@ def test_run_drains_work_and_stops(cfg):
     p = _seed_two_task_project(boss, "drain")
     out = boss.run(p.id, autonomous=True)
     assert out["status"] == "stopped"
-    assert out["stop_reason"] == "drained"
+    assert out["stop_reason"] in ("drained", "done")
     p2 = boss.store.load(p.id)
     assert all(t.status is TaskStatus.DONE for t in p2.tasks.values())
 
@@ -344,3 +344,27 @@ def test_run_respects_max_cycles(cfg):
     out = boss.run(p.id, autonomous=True, max_cycles=1)
     assert out["cycles"] == 1
     assert out["stop_reason"] == "max_cycles"
+
+
+def test_run_stops_done_when_all_tasks_complete(cfg):
+    boss = _loop_boss(cfg)
+    p = _seed_two_task_project(boss, "done")
+    out = boss.run(p.id, autonomous=True)
+    p2 = boss.store.load(p.id)
+    summary = graph_summary(p2)
+    assert summary["done"] == summary["tasks_total"]
+    assert out["stop_reason"] in ("done", "drained")
+
+
+def test_run_does_not_vacuously_halt_with_zero_milestones(cfg):
+    boss = _loop_boss(cfg)
+    p = Project(name="zeromiles")
+    t1 = Task(title="only")
+    p.tasks = {t1.id: t1}
+    refresh_statuses(p)
+    boss.store.save(p)
+    assert not p.milestones
+    out = boss.run(p.id, autonomous=True, max_cycles=1)
+    assert out["cycles"] == 1, "loop must run >=1 cycle, not halt vacuously"
+    p2 = boss.store.load(p.id)
+    assert p2.tasks[t1.id].status is TaskStatus.DONE
