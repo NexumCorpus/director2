@@ -735,6 +735,24 @@ class Director:
                 and not force):
             sc = project.scream_open
             sc["held_cycles"] = int(sc.get("held_cycles", 0)) + 1
+            if (sc["held_cycles"] > self.cfg.max_held_cycles
+                    and not sc.get("escalated")):
+                sc["escalated"] = True
+                self._make_packet(
+                    project, trigger="scream:deadlock:" + sc["cause"],
+                    hint=(f"Latch on {sc['cause']} has held "
+                          f"{sc['held_cycles']} cycles past the limit - "
+                          f"unrecoverable; operator decision required."),
+                    context_override=(
+                        f"DEADLOCK: the {sc['cause']} scream has not cleared "
+                        f"after {sc['held_cycles']} held cycles. Trusted "
+                        f"re-verification ({sc.get('clear_rule', '')}) still "
+                        f"fails. Operator decision required."))
+                self._audit(project, "scream.deadlock",
+                            f"latch {sc['cause']} exceeded max_held_cycles "
+                            f"({self.cfg.max_held_cycles})",
+                            {"cause": sc["cause"],
+                             "held_cycles": sc["held_cycles"]})
             self.store.save(project)
             return {"status": "latched",
                     "summary": f"SCREAM held ({sc['cause']}); "
@@ -885,28 +903,66 @@ class Director:
             self._handle_siren(project, scream, autonomous=autonomous)
 
     def _handle_ache(self, project: Project, scream: dict) -> None:
+        """An ache is a wince: record it (always) and inject AT MOST one bounded
+        diagnostic review task at the frontier tail — no priority, no early
+        dependency edge, no posture change (Constitution #5)."""
         self._audit(project, "scream.ache",
                     f"ache on {scream['axis']}: {scream['report'][:200]}",
                     {"axis": scream["axis"]})
+        axis = scream["axis"]
+        module_id = ""
+        from .coherence import apply_delta
+        from .types import StateDelta
+        delta = StateDelta(
+            trigger=f"ache:{project.cycle_seq}",
+            summary=f"diagnostic for ache on {axis}",
+            payload={"new_tasks": [{
+                "title": f"Diagnose {axis.replace('_', ' ')} "
+                         f"(cycle {project.cycle_seq})",
+                "role": "review", "module_id": module_id,
+                "objective": ("Diagnose this failing case and its cause, then "
+                              "propose a fix: " + scream["report"])}]})
+        try:
+            apply_delta(project, delta, actor="director")
+        except CoherenceBlockedError as exc:
+            project.coherence_blocks += 1
+            self._audit(project, "scream.ache_blocked",
+                        f"ache diagnostic blocked by coherence: {exc}",
+                        {"axis": axis})
 
     def _handle_siren(self, project: Project, scream: dict, *,
                       autonomous: bool) -> None:
+        """A siren raises a Command Packet carrying the TRUSTED damage report
+        verbatim and opens the latch. It never picks a recovery branch."""
+        from .types import TaskStatus
         report = scream["report"]
+        cause = scream["cause"]
         # a SCREAM is a halt-the-world interrupt: it outranks any routine
         # packet (milestone/fork) raised earlier in this same advance, so the
         # commander faces the latch alone, not a menu next to it. Supersede the
         # in-flight ones before raising the siren packet.
         for pk in self._open_packets(project):
             pk.status = PacketStatus.SUPERSEDED
-        self._make_packet(project, trigger="scream:" + scream["cause"],
-                          hint=report, context_override=report)
+        self._make_packet(project, trigger="scream:" + cause, hint=report,
+                          context_override=report)
+        risk_ids = list((project.body.provenance or {}).get("risk_ids", [])) \
+            if project.body else []
+        if risk_ids:
+            origin_refs = risk_ids
+        else:
+            origin_refs = [t.id for t in project.tasks.values()
+                           if t.status is TaskStatus.FAILED]
+        opened_severity = float(getattr(project.body, "accumulated_damage", 0.0)
+                                if project.body else 0.0)
         project.scream_open = {
-            "cause": scream["cause"], "axis": scream["axis"],
+            "cause": cause, "axis": scream["axis"],
             "opened_at": project.cycle_seq, "held_cycles": 1,
-            "clear_rule": scream["clear_rule"], "origin_refs": []}
+            "clear_rule": scream["clear_rule"], "origin_refs": origin_refs,
+            "opened_severity": opened_severity}
         self._audit(project, "scream.siren",
-                    f"SCREAM ({scream['cause']}) - latch opened",
-                    {"cause": scream["cause"], "axis": scream["axis"]})
+                    f"SCREAM ({cause}) - latch opened, clear: "
+                    f"{scream['clear_rule']}",
+                    {"cause": cause, "axis": scream["axis"]})
 
     def _spec_for(self, project: Project, task: Task) -> AgentSpec:
         """Build the bounded work order. Live finding (2026-06-12): a blind
