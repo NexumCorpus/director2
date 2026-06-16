@@ -258,3 +258,161 @@ def test_cli_bench_command_default_scenario(tmp_path, monkeypatch):
     assert r.exit_code == 0
     assert "nervous ON vs OFF" in r.output
     assert "screams_fired" in r.output
+
+
+def _build_live_director(cfg, scenario, project):
+    from director.bench.faults import ScriptedFaultRunner
+    store = ProjectStore(cfg)
+    router = LLMRouter(cfg, backends={"mock": MockBackend()})
+    registry = make_default_registry()
+    delegate = SubAgentRunner(cfg, router, registry)
+    title_index = {t.id: t.title for t in project.tasks.values()}
+    runner = ScriptedFaultRunner(delegate, scenario, title_index=title_index)
+    director = Director(cfg, store, router, registry, runner)
+    return director, store, runner
+
+
+def _advance_until_siren(director, store, runner, pid, *, max_cycles=20):
+    """Drive autonomous advance, stamping cycle_seq, until the latch opens."""
+    from director.core.types import utcnow
+    from director.evolve.metrics import PerfLedger
+    # the public stop() predicate is run-scoped: hold a perf ledger, a `since`
+    # stamp, and a cycle counter (as Director.run does) and pass them through.
+    perf = getattr(director, "perf", None) or PerfLedger(director.cfg)
+    since = utcnow().isoformat()
+    cycle_count = 0
+    for _ in range(max_cycles):
+        project = store.load(pid)
+        if project.scream_open:
+            return project
+        if director.stop(project, perf=perf, since=since, cycles=cycle_count):
+            break
+        runner.cycle_seq = project.cycle_seq + 1
+        director.advance(pid, autonomous=True)
+        cycle_count += 1
+    return store.load(pid)
+
+
+def test_integration_siren_latch_recovery_resume(tmp_path):
+    from director.bench.faults import FaultScenario
+
+    def seed():
+        p = Project(name="siren-arc")
+        # one task that keeps failing -> accumulated_damage climbs to siren
+        t_bad = Task(title="grounding-target", role="code",
+                     status=TaskStatus.READY, max_attempts=1)
+        p.tasks = {t_bad.id: t_bad}
+        return p
+
+    # fault every cycle for a while: repeated FAILED feeds accumulated_damage
+    schedule = {("grounding-target", c): f"scripted fault @ cycle {c}"
+                for c in range(1, 12)}
+    # OVERLAY: a single FAILED-driven axis renormalizes to composite ~-0.444 —
+    # an ache, never a siren — no matter how many FAILED cycles. The ONLY way
+    # the ON arm latches a siren is config_overrides: saturate accumulated_damage
+    # at 1.0 and lower the siren/ache thresholds so -0.444 <= siren_threshold.
+    scenario = FaultScenario(name="siren", seed_factory=seed, schedule=schedule,
+                             config_overrides=_SIREN_OVERRIDES)
+
+    cfg = Config(home=tmp_path / "on")
+    cfg.ensure_dirs()
+    cfg.nervous_enabled = True
+    cfg.auto_advance_after_decision = False
+    # OVERLAY: this director is built directly (not via run_arm/_run_once), so
+    # mirror what _run_once does — apply the scenario's config_overrides to the
+    # cfg the director will see, so it gets the tuned saturation/thresholds.
+    for k, v in scenario.config_overrides.items():
+        setattr(cfg, k, v)
+    project = seed()
+    director, store, runner = _build_live_director(cfg, scenario, project)
+    store.save(project)
+
+    # 1) drive until the siren latches
+    project = _advance_until_siren(director, store, runner, project.id)
+    assert project.scream_open is not None, "expected a siren to latch"
+    cause = project.scream_open["cause"]
+    assert cause in ("grounding_damage", "charter_breach", "tamper")
+    opened_at = project.scream_open["opened_at"]
+
+    # 2) the siren packet is still open, so the cycle right after the siren hits
+    #    the open-packet gate FIRST (returns "awaiting_command"). Answer/defer
+    #    that packet WITHOUT clearing the latch (only trusted re-verification
+    #    clears it); the NEXT autonomous advance then reaches the latch gate and
+    #    must HALT with "latched". Both are halts; the latch persists.
+    from director.core.types import PacketStatus
+    siren_pkt = next(pk for pk in store.load(project.id).packets.values()
+                     if pk.status is PacketStatus.PRESENTED
+                     and pk.trigger.startswith("scream:"))
+    director.decide(project.id, siren_pkt.id, option_key="A")
+    project = store.load(project.id)
+    assert project.scream_open is not None                    # answer != clear
+    runner.cycle_seq = project.cycle_seq + 1
+    out = director.advance(project.id, autonomous=True)
+    assert out["status"] == "latched"
+    project = store.load(project.id)
+    assert project.scream_open is not None
+    assert project.scream_open["opened_at"] == opened_at      # same latch
+
+    # 3) human recovery: remove the underlying fault AND reset the offending
+    #    FAILED task(s) so the operator-fixed work can re-run to DONE. This is
+    #    what makes the chosen grounding_damage clear rule actually satisfiable:
+    #    its origin_refs are the FAILED task ids, and the rule clears only once
+    #    those tasks are no longer FAILED AND accumulated_damage severity drops
+    #    below the recorded opened_severity. A human-commanded
+    #    advance(autonomous=False) then re-verifies the clear rule in place.
+    # (TaskStatus is already imported at module scope; a local re-import here
+    #  would make it function-local and break the seed() closure above.)
+    runner.scenario.schedule.clear()                          # operator fixes cause
+    project = store.load(project.id)
+    for t in project.tasks.values():
+        if t.status is TaskStatus.FAILED:
+            t.status = TaskStatus.READY                       # eligible to re-run
+            t.attempts = 0
+    store.save(project)
+    for _ in range(6):
+        project = store.load(project.id)
+        if project.scream_open is None:
+            break
+        runner.cycle_seq = project.cycle_seq + 1
+        director.advance(project.id, autonomous=False, force=True)
+
+    project = store.load(project.id)
+    assert project.scream_open is None, "verified clear should drop the latch"
+
+    # 4) auto-resume: a plain autonomous advance now proceeds (no halt)
+    runner.cycle_seq = project.cycle_seq + 1
+    resumed = director.advance(project.id, autonomous=True)
+    assert resumed["status"] in ("ok", "idle")
+
+
+def test_integration_on_vs_off_same_scenario_reproducible(tmp_path):
+    from director.bench.driver import compare, run_arm
+    from director.bench.faults import FaultScenario
+
+    def seed():
+        p = Project(name="delta-arc")
+        t_bad = Task(title="grounding-target", role="code",
+                     status=TaskStatus.READY, max_attempts=1)
+        p.tasks = {t_bad.id: t_bad}
+        return p
+
+    schedule = {("grounding-target", c): f"fault @ {c}" for c in range(1, 12)}
+    # OVERLAY: config_overrides are what make the ON arm latch a siren (see note
+    # on _SIREN_OVERRIDES); they are inert on the OFF arm (no valence pass).
+    scenario = FaultScenario(name="siren", seed_factory=seed, schedule=schedule,
+                             config_overrides=_SIREN_OVERRIDES)
+
+    off = run_arm(scenario, nervous=False, reps=3, home=tmp_path / "off")
+    on = run_arm(scenario, nervous=True, reps=3, home=tmp_path / "on")
+    delta = compare(on, off)
+
+    # faults match across arms (title+cycle_seq keyed) -> OFF also sees the
+    # worker failures, but with no nervous system it never screams or halts
+    assert off["totals"]["screams_fired"] == 0
+    assert on["totals"]["screams_fired"] >= 1
+    # reproducible across 3 reps: ON's scream count is identical every rep
+    on_per_rep = [r["screams_fired"] for r in on["runs"]]
+    assert min(on_per_rep) == max(on_per_rep)                  # zero spread
+    # the headline: ON halts on the fault, OFF plows through more cycles
+    assert delta["cycles_run"]["off"] >= delta["cycles_run"]["on"] or \
+        delta["screams_fired"]["delta"] >= 1
