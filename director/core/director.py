@@ -316,11 +316,19 @@ class Director:
             type=type_, summary=summary, actor=actor, payload=payload or {}))
 
     # ------------------------------------------------------------ new project
-    def new_project(self, name: str, objective: str) -> tuple[Project, CommandPacket]:
+    def new_project(self, name: str, objective: str, *,
+                    on_event=None) -> tuple[Project, CommandPacket]:
         prev_current = self.store.get_current()
         project = self.store.create(name)
         try:
-            plan = self._plan(objective)
+            # Only thread on_event when a sink is present: callers that monkey-
+            # patch _plan (tests) expect the standard one-arg signature; passing
+            # on_event=None would break them and is a no-op anyway (the gate
+            # check inside _plan is `on_event is not None`).
+            if on_event is not None:
+                plan = self._plan(objective, on_event=on_event)
+            else:
+                plan = self._plan(objective)
             self._ingest_plan(project, objective, plan)
         except Exception:
             # Don't leave an empty orphan project as the current selection —
@@ -343,12 +351,21 @@ class Director:
         self.store.save(project)
         return project, packet
 
-    def _plan(self, objective: str) -> PlanOut:
+    def _plan(self, objective: str, *, on_event=None) -> PlanOut:
         user = (f"objective: {objective}\n\n"
                 f"Available agent roles: {', '.join(role_names())}")
-        plan: PlanOut = self.router.structured(
-            PLAN_SYSTEM.format(roles=", ".join(role_names())), user,
-            PlanOut, role="director", kind="initial_plan")
+        sys_prompt = PLAN_SYSTEM.format(roles=", ".join(role_names()))
+        # GATED: stream the plan's generation to the sink ONLY when both the
+        # gate is on AND a sink is present. Otherwise the call is byte-identical
+        # to before (structured()). stream_structured shares structured()'s
+        # parse/validate, so the returned PlanOut is identical either way.
+        if self.cfg.stream_generation and on_event is not None:
+            plan: PlanOut = self.router.stream_structured(
+                sys_prompt, user, PlanOut, on_event=on_event,
+                role="director", kind="initial_plan")
+        else:
+            plan = self.router.structured(
+                sys_prompt, user, PlanOut, role="director", kind="initial_plan")
         # semantic validation beyond schema
         problems = []
         if not plan.modules:
