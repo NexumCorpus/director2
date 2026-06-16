@@ -172,3 +172,100 @@ def _fragile_axes(valence: float, severities: dict, cfg) -> list[str]:
         if abs(s - 1.0) <= eps and valence < 0.0:
             fragile.append(ax)
     return fragile
+
+
+# ----------------------------------------------------------------- scream
+# Declared cause strings (Constitution d: declared semantics). Tamper and
+# charter_breach are HARD per-axis overrides that force a siren regardless of
+# the composite — a catastrophic axis must never hide behind three healthy
+# ones. grounding_damage is the composite-driven deep negative.
+_SIREN_CAUSES = ("tamper", "charter_breach", "grounding_damage")
+
+_CLEAR_RULES = {
+    "tamper": "integrity re-check returns 0 violations",
+    "charter_breach": "charter_integrity recovers below "
+                      "charter_breach_threshold - hysteresis_margin",
+    "grounding_damage": "the offending risk(s) close AND a run_properties "
+                        "re-pass on the deliverable passes",
+}
+
+# axes that feed the composite, in declared order; used to attribute an ache
+# to its largest-contributing axis (problems-not-rubrics).
+_COMPOSITE_AXES = ("charter_integrity", "accumulated_damage",
+                   "uncertainty", "resource_bleed")
+
+
+def _axis_severity(body: "BodyState", axis: str) -> float:
+    """Severity of one axis as a float in [0,1]; an abstaining ('insufficient')
+    axis contributes 0 to attribution."""
+    val = getattr(body, axis, 0.0)
+    return float(val) if isinstance(val, (int, float)) else 0.0
+
+
+def _largest_axis(body: "BodyState", cfg) -> str:
+    """The axis carrying the most severity * weight — the one to name in the
+    diagnosis. Ties resolve in declared order."""
+    weights = cfg.valence_weights
+    best, best_score = _COMPOSITE_AXES[0], -1.0
+    for axis in _COMPOSITE_AXES:
+        score = _axis_severity(body, axis) * float(weights.get(axis, 0.0))
+        if score > best_score:
+            best, best_score = axis, score
+    return best
+
+
+def evaluate_scream(project: "Project", body: "BodyState", *, cfg) -> dict | None:
+    """Trusted threshold evaluator. Returns None when calm; else a dict
+    {level, cause, axis, clear_rule, report}. NEVER calls a model and NEVER
+    leaks the numeric valence/threshold/weights into the report (Constitution
+    b: problems, not rubrics)."""
+    if not cfg.nervous_enabled:
+        return None
+
+    # --- hard per-axis overrides -> siren, regardless of composite -----------
+    prov = body.provenance or {}
+    if int(prov.get("integrity_violations", 0)) > 0:
+        return {"level": "siren", "cause": "tamper",
+                "axis": "charter_integrity",
+                "clear_rule": _CLEAR_RULES["tamper"],
+                "report": ("Trusted integrity re-check found tampered "
+                           "property report(s): signature binding INVALID. "
+                           "Work is halted until the forgery is removed and "
+                           "integrity re-verifies clean.")}
+
+    ci = _axis_severity(body, "charter_integrity")
+    if ci >= float(cfg.charter_breach_threshold):
+        return {"level": "siren", "cause": "charter_breach",
+                "axis": "charter_integrity",
+                "clear_rule": _CLEAR_RULES["charter_breach"],
+                "report": ("Charter integrity has breached: a CRITICAL "
+                           "grounding risk is open and/or milestones reverted "
+                           "/ coherence blocked the core mission. Recovery "
+                           "must restore charter alignment before work "
+                           "resumes.")}
+
+    # --- composite gradient -------------------------------------------------
+    v = float(body.valence)
+    if v > float(cfg.ache_threshold):
+        return None
+
+    axis = _largest_axis(body, cfg)
+    if v <= float(cfg.siren_threshold):
+        return {"level": "siren", "cause": "grounding_damage", "axis": axis,
+                "clear_rule": _CLEAR_RULES["grounding_damage"],
+                "report": _diagnosis_report(project, body, axis)}
+
+    # ache: the offending axis is the cause (an ache is a wince, not a halt)
+    return {"level": "ache", "cause": axis, "axis": axis,
+            "clear_rule": "", "report": _diagnosis_report(project, body, axis)}
+
+
+def _diagnosis_report(project: "Project", body: "BodyState", axis: str) -> str:
+    """A failing-cases + cause sentence for the offending axis — the problem,
+    never the numeric valence/threshold (Constitution b)."""
+    prov = body.provenance or {}
+    refs = prov.get(f"{axis}_refs") or prov.get("risk_ids") or []
+    detail = ("; refs: " + ", ".join(str(r) for r in refs[:5])) if refs else ""
+    pretty = axis.replace("_", " ")
+    return (f"Damage on {pretty}: trusted state shows accumulated failures on "
+            f"this axis from executed/verified work{detail}.")
