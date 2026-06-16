@@ -872,6 +872,39 @@ class Director:
                 "new_packets": new_packets,
                 "milestones_reached": [m.name for m in reached]}
 
+    # ------------------------------------------------------------------- run
+    def run(self, project_ref: str, *, autonomous: bool = True,
+            max_cycles: int | None = None) -> dict:
+        """Bounded autonomous loop: call advance(autonomous=True) until a
+        declared stop condition fires. The loop OWNS NO STATE. `since` is
+        captured ONCE at entry so the budget stop and resource_bleed see
+        run-scoped tokens, not the lifetime ledger."""
+        from ..evolve.metrics import PerfLedger
+        perf = getattr(self, "perf", None) or PerfLedger(self.cfg)
+        since = utcnow().isoformat()
+        cycles = 0
+        while True:
+            project = self.store.load(project_ref)
+            reason = self.stop(project, perf=perf, since=since)
+            if reason is not None:
+                return {"status": "stopped", "stop_reason": reason,
+                        "cycles": cycles, "since": since}
+            if max_cycles is not None and cycles >= max_cycles:
+                return {"status": "stopped", "stop_reason": "max_cycles",
+                        "cycles": cycles, "since": since}
+            self.advance(project_ref, autonomous=autonomous)
+            cycles += 1
+
+    def stop(self, project: Project, *, perf, since,
+             cycles: int = 0, started_at: float | None = None) -> str | None:
+        """The declared stop predicate, in precedence order (spec section 6).
+        Returns a stop-reason string, or None to keep looping. Pure read-only."""
+        running = any(t.status is TaskStatus.RUNNING
+                      for t in project.tasks.values())
+        if not ready_tasks(project) and not running:
+            return "drained"
+        return None
+
     # ---------------------------------------------------------- nervous pass
     def _nervous_pass(self, project: Project, *, autonomous: bool) -> None:
         """Trusted valence pass: bump cycle_seq, recompute the Body, re-test an

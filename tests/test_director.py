@@ -16,6 +16,38 @@ from director.errors import CoherenceBlockedError
 from director.llm.mock import MockBackend
 from director.llm.router import LLMRouter
 from director.verify import make_default_registry
+from director.agents.base import AgentResult, AgentSpec  # noqa: E402
+
+
+class _DrainRunner:
+    """Deterministic runner for loop tests: every dispatched spec succeeds
+    with a trivial artifact-free output, so a task graph drains to DONE."""
+
+    def run(self, spec: AgentSpec) -> AgentResult:
+        return AgentResult(spec_id=spec.id, task_id=spec.task_id,
+                           role=spec.role, ok=True,
+                           output={"summary": "ok", "task_id": spec.task_id})
+
+    def run_parallel(self, specs: list[AgentSpec]) -> list[AgentResult]:
+        return [self.run(s) for s in specs]
+
+
+def _loop_boss(cfg):
+    store = ProjectStore(cfg)
+    router = LLMRouter(cfg, backends={"mock": MockBackend()})
+    registry = make_default_registry()
+    boss = Director(cfg, store, router, registry, _DrainRunner())
+    return boss
+
+
+def _seed_two_task_project(boss, name="loop"):
+    p = Project(name=name)
+    t1 = Task(title="first")
+    t2 = Task(title="second", depends_on=[t1.id])
+    p.tasks = {t1.id: t1, t2.id: t2}
+    refresh_statuses(p)
+    boss.store.save(p)
+    return p
 
 
 @pytest.fixture()
@@ -293,3 +325,22 @@ def test_approve_task_human_override(boss):
     assert out["status"] == "ok"
     p2 = boss.store.load(p.id)
     assert p2.tasks[t.id].status is TaskStatus.DONE
+
+
+# ------------------------------------------------------------- autonomous loop
+def test_run_drains_work_and_stops(cfg):
+    boss = _loop_boss(cfg)
+    p = _seed_two_task_project(boss, "drain")
+    out = boss.run(p.id, autonomous=True)
+    assert out["status"] == "stopped"
+    assert out["stop_reason"] == "drained"
+    p2 = boss.store.load(p.id)
+    assert all(t.status is TaskStatus.DONE for t in p2.tasks.values())
+
+
+def test_run_respects_max_cycles(cfg):
+    boss = _loop_boss(cfg)
+    p = _seed_two_task_project(boss, "bound")
+    out = boss.run(p.id, autonomous=True, max_cycles=1)
+    assert out["cycles"] == 1
+    assert out["stop_reason"] == "max_cycles"
