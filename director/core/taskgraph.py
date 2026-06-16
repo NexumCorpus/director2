@@ -123,6 +123,7 @@ def refresh_milestones(project: Project) -> list[Milestone]:
             # a member was reopened or regressed — the milestone reverts
             # rather than asserting a deliverable that no longer holds
             ms.status = MilestoneStatus.PENDING
+            project.milestone_reverts += 1     # charter_integrity signal (Body reads it)
             log.warning("milestone '%s' reverted to pending: %s",
                         ms.name, "; ".join(blockers))
     return reached
