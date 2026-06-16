@@ -695,7 +695,8 @@ class Director:
         if (self.cfg.auto_advance_after_decision and
                 response in (ResponseType.SELECT_OPTION,
                              ResponseType.SELECT_AND_MODIFY) and
-                not self._open_packets(project)):
+                not self._open_packets(project) and
+                not (self.cfg.nervous_enabled and project.scream_open)):
             adv = self.advance(project.id)
             result["follow_up"] = f"auto-advanced: {adv['summary']}"
         return result
@@ -1397,6 +1398,18 @@ class Director:
             # the arc just spun) — point the commander at retrying it.
             next_action = (f"retry {failed[0].id[:8]} "
                            f"(failed; {len(failed)} blocking dependents)")
+        scream = (project.scream_open
+                  if (self.cfg.nervous_enabled and project.scream_open)
+                  else None)
+        if scream:
+            next_action = (f"SCREAM: {scream['cause']} - recover then advance "
+                           f"(clear: {scream.get('clear_rule', '')})")
+        health = None
+        if self.cfg.nervous_enabled:
+            hbody = compute_body(project, secret=self.cfg.report_secret(),
+                                 perf=self.perf, since=None, cfg=self.cfg)
+            health = {"valence": hbody.valence,
+                      "fragile_axes": list(hbody.fragile_axes)}
         return {
             "id": project.id, "name": project.name, "status": project.status,
             "objective": project.charter.objective,
@@ -1406,4 +1419,6 @@ class Director:
             "failed_ids": [t.id for t in failed],
             "artifacts": len(project.artifacts),
             "next_action": next_action,
+            "scream": scream,
+            "health": health,
         }
