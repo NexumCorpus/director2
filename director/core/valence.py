@@ -85,6 +85,23 @@ def _severity_uncertainty(project: Project, *, cfg) -> float:
     return _clamp01(raw, cfg.axis_saturation["uncertainty"])
 
 
+def _severity_resource_bleed(project: Project, *, perf, since, cfg):
+    """Run-scoped token burn vs the declared token budget. Returns the
+    "insufficient" sentinel (NOT 0.0) when no budget is declared or no perf
+    ledger is available — the axis is DARK, not fine (Constitution g). Tokens are
+    run-scoped via perf.stats(since=since)."""
+    budget = cfg.budget
+    if not budget or perf is None:
+        return _INSUFFICIENT
+    max_tokens = budget.get("max_tokens")
+    if not max_tokens:
+        return _INSUFFICIENT
+    stats = perf.stats(since=since)
+    used = int(stats.get("prompt_tokens", 0)) + \
+        int(stats.get("completion_tokens", 0))
+    return _clamp01(used, max_tokens)
+
+
 def compute_body(project: Project, *, secret: bytes, perf, since, cfg) -> BodyState:
     """Recompute the trusted valence projection. Pure reducer; never calls a model."""
     integrity_rows = report_integrity(project, secret)
@@ -95,7 +112,7 @@ def compute_body(project: Project, *, secret: bytes, perf, since, cfg) -> BodySt
     charter = _severity_charter_integrity(project, cfg=cfg)
 
     uncertainty = _severity_uncertainty(project, cfg=cfg)
-    bleed = _INSUFFICIENT
+    bleed = _severity_resource_bleed(project, perf=perf, since=since, cfg=cfg)
 
     severities = {"accumulated_damage": damage, "uncertainty": uncertainty,
                   "charter_integrity": charter}

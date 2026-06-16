@@ -199,3 +199,70 @@ def test_uncertainty_saturates():
     p.tasks = {t.id: t for t in
                [_task(status=TaskStatus.NEEDS_VERIFY) for _ in range(9)]}
     assert _severity_uncertainty(p, cfg=cfg) == 1.0
+
+
+# ----------------------------------------------- resource_bleed + abstention
+from director.core.valence import _severity_resource_bleed, _composite  # noqa: E402
+
+
+class _FakePerf:
+    """Minimal duck-type of PerfLedger: only stats(since=...) is read."""
+    def __init__(self, prompt_tokens, completion_tokens):
+        self._p, self._c = prompt_tokens, completion_tokens
+
+    def stats(self, *, since=None):
+        return {"calls": 1, "prompt_tokens": self._p,
+                "completion_tokens": self._c}
+
+
+def test_resource_bleed_abstains_with_no_budget():
+    cfg = Config()
+    s = _severity_resource_bleed(_proj(), perf=_FakePerf(10, 10), since=None,
+                                 cfg=cfg)
+    assert s == "insufficient"
+
+
+def test_resource_bleed_severity_against_token_budget():
+    cfg = Config()
+    cfg.budget = {"max_tokens": 1000}
+    s = _severity_resource_bleed(_proj(), perf=_FakePerf(400, 200), since=None,
+                                 cfg=cfg)
+    assert abs(s - 0.6) < 1e-9
+
+
+def test_resource_bleed_saturates_at_budget():
+    cfg = Config()
+    cfg.budget = {"max_tokens": 100}
+    s = _severity_resource_bleed(_proj(), perf=_FakePerf(500, 0), since=None,
+                                 cfg=cfg)
+    assert s == 1.0
+
+
+def test_resource_bleed_abstains_when_perf_is_none():
+    cfg = Config()
+    cfg.budget = {"max_tokens": 1000}
+    s = _severity_resource_bleed(_proj(), perf=None, since=None, cfg=cfg)
+    assert s == "insufficient"
+
+
+def test_composite_renormalizes_when_one_axis_abstains():
+    cfg = Config()
+    sev = {"accumulated_damage": 1.0, "uncertainty": 0.0,
+           "charter_integrity": 0.0}
+    v = _composite(sev, cfg)
+    assert abs(v - (-0.40 / 0.90)) < 1e-6
+
+
+def test_composite_with_all_axes_present_uses_raw_weights():
+    cfg = Config()
+    sev = {"accumulated_damage": 1.0, "uncertainty": 0.0,
+           "charter_integrity": 0.0, "resource_bleed": 0.0}
+    v = _composite(sev, cfg)
+    assert abs(v - (-0.40)) < 1e-9
+
+
+def test_compute_body_reports_insufficient_bleed_by_default():
+    cfg = Config()
+    body = compute_body(_proj(), secret=cfg.report_secret(),
+                        perf=_FakePerf(50, 50), since=None, cfg=cfg)
+    assert body.resource_bleed == "insufficient"
