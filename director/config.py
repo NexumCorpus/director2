@@ -88,6 +88,11 @@ class Config:
     validation_retries: int = 1        # schema-failure retries WITH error feedback (F18 lesson)
     max_output_tokens: int = 8192      # live finding: 4096 truncated real Opus JSON
     temperature: float = 0.3
+    # --- live generation streaming ------------------------------------------
+    # DEFAULT FALSE: OFF byte-identical. With it off, no streaming code runs and
+    # the pre-existing suite stays green; only when ON does _plan stream its
+    # generation to the dashboard sink. Honest label: GENERATION, not reasoning.
+    stream_generation: bool = False
 
     # --- orchestration --------------------------------------------------------
     max_parallel_agents: int = 4
@@ -176,6 +181,8 @@ class Config:
             loop_iterations=_env_int("DIRECTOR_LOOP_ITERATIONS", 6),
             builder_fanout=_env_int("DIRECTOR_BUILDER_FANOUT", 1),
             log_level=os.environ.get("DIRECTOR_LOG_LEVEL", "INFO").strip().upper() or "INFO",
+            stream_generation=os.environ.get(
+                "DIRECTOR_STREAM_GENERATION", "").strip().lower() in _TRUTHY,
         )
         if os.environ.get("DIRECTOR_AUTO_ADVANCE", "").strip().lower() in _TRUTHY:
             cfg.auto_advance_after_decision = True
