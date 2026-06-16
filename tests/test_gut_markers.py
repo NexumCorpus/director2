@@ -94,3 +94,27 @@ def test_off_path_no_repel(cfg):
     boss.advance(p.id, autonomous=False)
     # OFF: canonical order dispatches; no deferral tracking
     assert boss.store.load(p.id).marker_deferrals == {}
+
+
+def test_repeated_deferral_escalates_to_packet(cfg):
+    from director.core.types import PacketStatus
+    cfg.marker_defer_escalate_cycles = 2
+    markers = MarkerStore(cfg)
+    p, scarred, clean = _two_ready(cfg)
+    markers.record(Marker(signature=task_signature(scarred),
+                          cause="failed_verification", diagnosis="d", last_cycle=0))
+    boss = _boss(cfg, markers)
+    boss.store.save(p)
+    # keep a fresh clean task ready each cycle so the scarred one stays deferred
+    for c in range(4):
+        pr = boss.store.load(p.id)
+        if not [pk for pk in pr.packets.values()
+                if pk.status is PacketStatus.PRESENTED]:
+            extra = Task(title=f"Clean{c}", role="code", module_id="m1",
+                         objective=f"fresh {c}", status=TaskStatus.READY)
+            pr.tasks[extra.id] = extra
+            boss.store.save(pr)
+        boss.advance(p.id, autonomous=False, force=True)
+    pr = boss.store.load(p.id)
+    assert any(pk.trigger.startswith("markers:deferred:")
+               for pk in pr.packets.values())
