@@ -125,3 +125,75 @@ def test_router_director_temperature_default_unchanged(cfg):
     # other roles are untouched by the director pin
     assert router.profile_for("judge").temperature == 0.0
     assert router.profile_for("builder").temperature == 0.5
+
+
+# OVERLAY: a single failed task drives only the accumulated_damage axis; with
+# resource_bleed abstaining the three present axes renormalize so a saturated
+# accumulated_damage yields composite ~-0.444 — an ACHE, not a SIREN. To make
+# the ON arm cross the siren threshold (and set the scream_open latch that
+# screams_fired counts) we declare per-scenario config_overrides: saturate
+# accumulated_damage at 1.0 (one failed task -> severity 1.0) and lower the
+# siren/ache thresholds so -0.444 <= siren_threshold. These overrides are inert
+# on the OFF arm (it never runs the valence pass). The bad task gets
+# max_attempts=1 so a single cycle-1 fault fails it TERMINALLY (default is 2,
+# so without this it would retry and might never reach FAILED in the window).
+_SIREN_OVERRIDES = {
+    "axis_saturation": {"accumulated_damage": 1.0, "charter_integrity": 3.0,
+                        "uncertainty": 4.0},
+    "siren_threshold": -0.40,
+    "ache_threshold": -0.20,
+}
+
+
+def test_run_arm_off_records_per_cycle_log(tmp_path):
+    from director.bench.driver import run_arm
+    from director.bench.faults import FaultScenario
+
+    def seed():
+        p = Project(name="arm-seed")
+        t_ok = Task(title="build-ok", role="code", status=TaskStatus.READY)
+        t_bad = Task(title="build-bad", role="code", status=TaskStatus.READY)
+        p.tasks = {t_ok.id: t_ok, t_bad.id: t_bad}
+        return p
+
+    scenario = FaultScenario(name="s", seed_factory=seed,
+                             schedule={("build-bad", 1): "boom"})
+    out = run_arm(scenario, nervous=False, reps=2, home=tmp_path / "off")
+    assert out["arm"] == "off"
+    assert out["reps"] == 2
+    assert len(out["runs"]) == 2
+    # each run logs per-cycle rows carrying cycle_seq + accumulated_damage
+    run0 = out["runs"][0]
+    assert run0["cycles"]                       # at least one cycle ran
+    first = run0["cycles"][0]
+    assert "cycle_seq" in first and "accumulated_damage" in first
+    assert "scream" in first and "held_cycles" in first
+
+
+def test_run_arm_on_vs_off_measurable_delta(tmp_path):
+    from director.bench.driver import compare, run_arm
+    from director.bench.faults import FaultScenario
+
+    def seed():
+        p = Project(name="arm-seed")
+        t_ok = Task(title="build-ok", role="code", status=TaskStatus.READY)
+        t_bad = Task(title="build-bad", role="code", status=TaskStatus.READY,
+                     max_attempts=1)
+        p.tasks = {t_ok.id: t_ok, t_bad.id: t_bad}
+        return p
+
+    scenario = FaultScenario(name="s", seed_factory=seed,
+                             schedule={("build-bad", 1): "boom",
+                                       ("build-bad", 2): "boom"},
+                             config_overrides=_SIREN_OVERRIDES)
+    off = run_arm(scenario, nervous=False, reps=3, home=tmp_path / "off")
+    on = run_arm(scenario, nervous=True, reps=3, home=tmp_path / "on")
+    delta = compare(on, off)
+    # ON fires interrupts; OFF cannot (nervous_enabled False -> no scream ever)
+    assert off["totals"]["screams_fired"] == 0
+    assert on["totals"]["screams_fired"] >= 1
+    assert delta["screams_fired"]["on"] >= 1
+    assert delta["screams_fired"]["off"] == 0
+    # reproducible: the headline delta has a declared sign, not a single run
+    assert delta["screams_fired"]["delta"] == (
+        on["totals"]["screams_fired"] - off["totals"]["screams_fired"])
