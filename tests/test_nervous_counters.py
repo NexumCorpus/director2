@@ -42,3 +42,30 @@ def test_milestone_revert_counter_inert_when_no_revert():
     p = _project_with_reached_milestone()
     refresh_milestones(p)
     assert p.milestone_reverts == 0
+
+
+def _blocking_delta() -> StateDelta:
+    return StateDelta(
+        trigger="manual", summary="bad module update",
+        payload={"module_updates": [
+            {"module_id": "does-not-exist", "status": "in_command"}]})
+
+
+def test_coherence_block_increments_counter():
+    p = Project(name="coh")
+    assert p.coherence_blocks == 0
+    with pytest.raises(CoherenceBlockedError):
+        apply_delta(p, _blocking_delta(), actor="human")
+    assert p.coherence_blocks == 1
+
+
+def test_coherence_block_counter_inert_on_clean_delta():
+    p = Project(name="coh2")
+    m = Module(name="core", type=ModuleType.IMPLEMENTATION, purpose="x",
+               status=ModuleStatus.ACTIVE)
+    p.modules[m.id] = m
+    delta = StateDelta(
+        trigger="manual", summary="clean note",
+        payload={"module_updates": [{"module_id": m.id, "note": "ok"}]})
+    apply_delta(p, delta, actor="human")
+    assert p.coherence_blocks == 0

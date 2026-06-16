@@ -213,6 +213,7 @@ def apply_delta(project: Project, delta: StateDelta, *,
     if rep.blocked:
         delta.status = "blocked"
         project.deltas[delta.id] = delta
+        project.coherence_blocks += 1     # charter_integrity signal (Body reads it)
         raise CoherenceBlockedError("; ".join(rep.conflicts))
 
     payload = delta.payload or {}
