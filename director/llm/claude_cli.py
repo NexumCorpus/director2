@@ -114,6 +114,12 @@ class ClaudeCliBackend(LLMBackend):
             argv += ["--verbose"]
         if model:
             argv += ["--model", model]
+        # optional reasoning-effort (CLI --effort low|medium|high). Env-driven so
+        # no signature churn through complete()/stream(). Default unset -> no flag
+        # -> argv byte-identical (test_complete_contract stays green).
+        effort = os.environ.get("DIRECTOR_EFFORT", "").strip()
+        if effort:
+            argv += ["--effort", effort]
         if system:
             argv += ["--system-prompt", system]
         return argv
