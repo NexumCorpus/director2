@@ -13,5 +13,7 @@ from __future__ import annotations
 
 from .faults import FaultScenario, ScriptedFaultRunner
 from .driver import compare, run_arm
+from .report import summary_lines, write_trace
 
-__all__ = ["FaultScenario", "ScriptedFaultRunner", "run_arm", "compare"]
+__all__ = ["FaultScenario", "ScriptedFaultRunner", "run_arm", "compare",
+           "summary_lines", "write_trace"]

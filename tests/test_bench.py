@@ -197,3 +197,52 @@ def test_run_arm_on_vs_off_measurable_delta(tmp_path):
     # reproducible: the headline delta has a declared sign, not a single run
     assert delta["screams_fired"]["delta"] == (
         on["totals"]["screams_fired"] - off["totals"]["screams_fired"])
+
+
+def test_write_trace_emits_one_jsonl_row_per_cycle(tmp_path):
+    from director.bench.driver import run_arm
+    from director.bench.faults import FaultScenario
+    from director.bench.report import write_trace
+
+    def seed():
+        p = Project(name="trace-seed")
+        t_bad = Task(title="build-bad", role="code", status=TaskStatus.READY)
+        p.tasks = {t_bad.id: t_bad}
+        return p
+
+    scenario = FaultScenario(name="s", seed_factory=seed,
+                             schedule={("build-bad", 1): "boom"})
+    arm = run_arm(scenario, nervous=True, reps=2, home=tmp_path / "on")
+    path = tmp_path / "trace.jsonl"
+    n = write_trace(path, arm)
+    assert path.is_file()
+    lines = [json.loads(ln) for ln in
+             path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lines) == n
+    expected = sum(len(r["cycles"]) for r in arm["runs"])
+    assert n == expected
+    row = lines[0]
+    assert row["arm"] == "on" and "rep" in row and "cycle_seq" in row
+    assert "scenario" in row and "accumulated_damage" in row
+
+
+def test_summary_lines_render_on_off_block(tmp_path):
+    from director.bench.driver import compare, run_arm
+    from director.bench.faults import FaultScenario
+    from director.bench.report import summary_lines
+
+    def seed():
+        p = Project(name="sum-seed")
+        t_bad = Task(title="build-bad", role="code", status=TaskStatus.READY)
+        p.tasks = {t_bad.id: t_bad}
+        return p
+
+    scenario = FaultScenario(name="s", seed_factory=seed,
+                             schedule={("build-bad", 1): "boom"})
+    on = run_arm(scenario, nervous=True, reps=2, home=tmp_path / "on")
+    off = run_arm(scenario, nervous=False, reps=2, home=tmp_path / "off")
+    lines = summary_lines(compare(on, off))
+    text = "\n".join(lines)
+    assert "screams_fired" in text
+    assert "ON" in text and "OFF" in text
+    assert "delta" in text.lower()
