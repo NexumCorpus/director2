@@ -102,9 +102,15 @@ class LLMRouter:
     def profile_for(self, role: str) -> ModelProfile:
         """Role → knobs. Explicit cfg.model wins for the primary roles."""
         base = {
-            "director": ModelProfile(role="director", temperature=0.2,
-                                     max_tokens=self.cfg.max_output_tokens,
-                                     timeout_s=self.cfg.request_timeout_s),
+            "director": ModelProfile(
+                role="director",
+                # pin the director-role temperature when declared (bench
+                # reproducibility); else keep the historical 0.2
+                temperature=(self.cfg.director_temperature
+                             if getattr(self.cfg, "director_temperature", None)
+                             is not None else 0.2),
+                max_tokens=self.cfg.max_output_tokens,
+                timeout_s=self.cfg.request_timeout_s),
             "builder": ModelProfile(role="builder", temperature=0.5,
                                     max_tokens=self.cfg.max_output_tokens,
                                     timeout_s=self.cfg.request_timeout_s),
