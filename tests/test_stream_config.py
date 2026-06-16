@@ -52,3 +52,18 @@ def test_cli_dashboard_accepts_backend_flag():
     res = CliRunner().invoke(main, ["dashboard", "--help"])
     assert res.exit_code == 0
     assert "--backend" in res.output
+
+
+# ------------------------------------------------- conftest live opt-in
+def test_conftest_blanks_by_default(monkeypatch):
+    # the autouse fixture ran for THIS test (no opt-in) -> backend env blanked
+    import os
+    assert os.environ.get("DIRECTOR_BACKEND", "") == ""
+
+
+def test_live_opt_in_helper_present():
+    # the opt-in env var name is documented in conftest source (the seam exists)
+    from pathlib import Path
+    src = Path(__file__).resolve().parent / "conftest.py"
+    text = src.read_text(encoding="utf-8")
+    assert "DIRECTOR_LIVE_BACKEND" in text
