@@ -120,6 +120,17 @@ def compute_body(project: Project, *, secret: bytes, perf, since, cfg) -> BodySt
         severities["resource_bleed"] = bleed
 
     valence = _composite(severities, cfg)
+    fragile = _fragile_axes(valence, severities, cfg)
+
+    # surface the integrity violations into provenance so Phase 3's tamper hard
+    # override (prov.get("integrity_violations", 0) > 0) is reachable in the
+    # real wired path, not only in unit tests. Reuse the rows computed above.
+    provenance = {
+        "risk_ids": [r.id for r in open_risks(project)],
+        "run_ids": list(project.runs),
+        "integrity_violations": len(violators),
+        "violation_ids": [r.get("artifact_id") for r in violators],
+    }
 
     return BodyState(
         charter_integrity=charter,
@@ -127,9 +138,9 @@ def compute_body(project: Project, *, secret: bytes, perf, since, cfg) -> BodySt
         uncertainty=uncertainty,
         resource_bleed=bleed,
         valence=valence,
-        fragile_axes=[],
+        fragile_axes=fragile,
         computed_at=project.cycle_seq,
-        provenance={},
+        provenance=provenance,
     )
 
 
@@ -143,3 +154,21 @@ def _composite(severities: dict, cfg) -> float:
         return 0.0
     acc = sum((w / total_w) * severities[ax] for ax, w in present.items())
     return -round(acc, 6)
+
+
+def _fragile_axes(valence: float, severities: dict, cfg) -> list[str]:
+    """Knife-edge labeling (RDE v11 lesson: never silently round a verdict up).
+    Fragile when within cfg.valence_eps of a decision edge: the composite within
+    valence_eps of ache/siren threshold; any present axis within valence_eps of
+    its 1.0 ceiling while the composite is negative. Descriptive only."""
+    eps = cfg.valence_eps
+    fragile: list[str] = []
+    if (abs(valence - cfg.ache_threshold) <= eps
+            or abs(valence - cfg.siren_threshold) <= eps):
+        fragile.append("composite")
+    for ax, s in severities.items():
+        if isinstance(s, str):
+            continue
+        if abs(s - 1.0) <= eps and valence < 0.0:
+            fragile.append(ax)
+    return fragile
