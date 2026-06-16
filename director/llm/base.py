@@ -67,6 +67,26 @@ class LLMBackend(ABC):
             self.complete, system, user, model=model, temperature=temperature,
             max_tokens=max_tokens, timeout_s=timeout_s, kind=kind)
 
+    def stream(self, system: str, user: str, *, on_event, model: str,
+               temperature: float, max_tokens: int, timeout_s: float,
+               kind: str = "") -> LLMResponse:
+        """Stream a completion, calling ``on_event(dict)`` per delta, and return
+        the SAME LLMResponse :meth:`complete` would. The default is the honest
+        non-streaming path: run the blocking call, then emit the whole result as
+        ONE ``text_delta`` — so every backend is a usable streaming source and
+        the router gets a deterministic side-channel even on backends with no
+        native token stream (mock, anthropic, openai_compat). A backend with a
+        real token stream (claude_cli) OVERRIDES this. Truth-in-labeling: the
+        default NEVER emits ``thinking_delta`` — there is no reasoning here."""
+        resp = self.complete(system, user, model=model, temperature=temperature,
+                             max_tokens=max_tokens, timeout_s=timeout_s,
+                             kind=kind)
+        try:
+            on_event({"type": "text_delta", "text": resp.text})
+        except Exception:                                     # noqa: BLE001
+            pass     # the sink is best-effort observability; never corrupt resp
+        return resp
+
     def resolve_model(self, profile: ModelProfile) -> str:
         if profile.model:
             return profile.model
