@@ -1172,6 +1172,14 @@ class Director:
                 parts.append(
                     "NOTE: context budget exhausted; upstream artifacts "
                     "OMITTED (request them if needed): " + "; ".join(omitted))
+        if self.cfg.nervous_enabled and self.markers is not None:
+            from ..memory.markers import task_signature
+            diags = [m.diagnosis for m in self.markers.recall(task_signature(task))
+                     if m.diagnosis]
+            if diags:
+                parts.append("PRIOR PAIN (trusted memory of past failures at this "
+                             "kind of task — avoid repeating these): "
+                             + "; ".join(diags))
         return AgentSpec(
             role=task.role, objective=task.objective or task.title,
             context="\n\n".join(parts),

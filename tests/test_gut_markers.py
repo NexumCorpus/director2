@@ -118,3 +118,19 @@ def test_repeated_deferral_escalates_to_packet(cfg):
     pr = boss.store.load(p.id)
     assert any(pk.trigger.startswith("markers:deferred:")
                for pk in pr.packets.values())
+
+
+def test_spec_injects_prior_pain_diagnosis_not_weight(cfg):
+    markers = MarkerStore(cfg)
+    p, scarred, clean = _two_ready(cfg)
+    markers.record(Marker(signature=task_signature(scarred),
+                          cause="failed_verification",
+                          diagnosis="add() returned a-b not a+b", last_cycle=0))
+    boss = _boss(cfg, markers)
+    spec = boss._spec_for(p, scarred)
+    assert "add() returned a-b not a+b" in spec.context     # the diagnosis reaches the model
+    assert "PRIOR PAIN" in spec.context
+    # un-gameable: the numeric weight NEVER reaches the generator
+    assert "-0.5" not in spec.context and "weight" not in spec.context.lower()
+    # a clean task gets no prior-pain block
+    assert "PRIOR PAIN" not in boss._spec_for(p, clean).context
