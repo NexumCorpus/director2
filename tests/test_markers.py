@@ -72,3 +72,22 @@ def test_persists_across_instances(cfg):
                                    cause="failed_verification", diagnosis="d",
                                    last_cycle=1))
     assert len(MarkerStore(cfg).recall("code|m1|implement add")) == 1
+
+
+def test_marker_config_defaults():
+    c = Config()
+    assert c.marker_recall_sim == 0.6
+    assert c.marker_merge_sim == 0.9
+    assert c.marker_repel_step == 0.5
+    assert c.marker_repel_floor == -3.0
+    assert c.marker_defer_escalate_cycles == 3
+    assert c.marker_digest_max == 3
+    assert c.marker_store_path == ""
+
+
+def test_project_marker_deferrals_default_empty():
+    from director.core.types import Project, decode, encode
+    p = Project(name="p")
+    assert p.marker_deferrals == {}
+    p.marker_deferrals = {"t1": 2}
+    assert decode(Project, encode(p)).marker_deferrals == {"t1": 2}

@@ -423,6 +423,8 @@ class Project:
     cycle_seq: int = 0                         # deterministic per-advance counter (NOT wall-clock)
     milestone_reverts: int = 0                 # charter_integrity signal (incremented at the revert log site)
     coherence_blocks: int = 0                  # charter_integrity signal (incremented where a delta is blocked)
+    # --- gut markers (v2) ---------------------------------------------------
+    marker_deferrals: dict = field(default_factory=dict)   # {task_id: deferral_count}
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
 
