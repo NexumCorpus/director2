@@ -208,6 +208,31 @@ def advance(project: str | None, max_tasks: int | None, force: bool) -> None:
 
 @main.command()
 @click.argument("project", required=False)
+@click.option("--cycles", type=int, default=None,
+              help="Max autonomous cycles (advance calls); unbounded if unset.")
+def run(project: str | None, cycles: int | None) -> None:
+    """Run the bounded autonomous loop: advance(autonomous=True) until a
+    declared stop condition fires (tamper / open packet or latch / budget /
+    done / drained)."""
+    svc = _services()
+    ref = svc.resolve_project(project)
+    out = svc.director.run(ref, autonomous=True, max_cycles=cycles)
+    click.echo(f"[{out['status']}] stop_reason={out['stop_reason']} "
+               f"cycles={out['cycles']}")
+    p = svc.store.load(ref)
+    open_pkts = [pk for pk in p.packets.values()
+                 if pk.status.value == "presented"]
+    for pkt in open_pkts:
+        _print_packet(pkt)
+    scream = getattr(p, "scream_open", None)
+    if scream:
+        click.secho(f"SCREAM: {scream.get('cause')} "
+                    f"(clear_rule={scream.get('clear_rule')})",
+                    fg="red", bold=True)
+
+
+@main.command()
+@click.argument("project", required=False)
 def packets(project: str | None) -> None:
     """Show open command packets."""
     svc = _services()

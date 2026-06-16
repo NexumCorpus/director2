@@ -118,6 +118,23 @@ def test_evolve_prompt_lifecycle_cli(env):
     assert "role_code: active=v2" in r.output
 
 
+def test_run_command_drives_loop_to_stop(env):
+    r = invoke("new", "run-demo", "-o", "build a verified toy library")
+    assert r.exit_code == 0
+    store = ProjectStore(Config.from_env())
+    pid = store.get_current()
+    project = store.load(pid)
+    open_pkt = [p for p in project.packets.values()
+                if p.status.value == "presented"][0]
+    r = invoke("decide", open_pkt.id[:8], "--select",
+               open_pkt.recommendation_key or "A")
+    assert r.exit_code == 0
+    r = invoke("run", "--cycles", "5")
+    assert r.exit_code == 0
+    assert "[stopped]" in r.output
+    assert "stop_reason=" in r.output or "stop:" in r.output
+
+
 def test_hooks_cli(env, tmp_path):
     r = invoke("hooks", "list")
     assert "fallout2_wr" in r.output and "dmip_isr" in r.output
