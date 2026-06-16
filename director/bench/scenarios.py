@@ -35,6 +35,14 @@ def _default_seed() -> Project:
     return p
 
 
+def _repeat_seed() -> Project:
+    p = Project(name="repeat-fault")
+    t = Task(title="flaky-build", role="code", status=TaskStatus.READY,
+             max_attempts=1, objective="build the flaky component")
+    p.tasks = {t.id: t}
+    return p
+
+
 _SCENARIOS = {
     "default": lambda: FaultScenario(
         name="default",
@@ -43,6 +51,12 @@ _SCENARIOS = {
                   ("build-bad", 2): "scripted fault: build-bad failed at cycle 2"},
         config_overrides=_SIREN_OVERRIDES),
 }
+
+_SCENARIOS["repeat_fault"] = lambda: FaultScenario(
+    name="repeat_fault", seed_factory=_repeat_seed,
+    schedule={("flaky-build", c): f"scripted fault: flaky-build failed at cycle {c}"
+              for c in range(1, 4)},
+    config_overrides=_SIREN_OVERRIDES)
 
 
 def scenario_names() -> list[str]:

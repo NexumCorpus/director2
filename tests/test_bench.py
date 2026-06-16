@@ -418,3 +418,16 @@ def test_integration_on_vs_off_same_scenario_reproducible(tmp_path):
     # the headline: ON halts on the fault, OFF plows through more cycles
     assert delta["cycles_run"]["off"] >= delta["cycles_run"]["on"] or \
         delta["screams_fired"]["delta"] >= 1
+
+
+def test_bench_on_arm_remembers_failures(tmp_path):
+    from director.bench.driver import run_arm
+    from director.bench.scenarios import get_scenario
+    scenario = get_scenario("repeat_fault")
+    on = run_arm(scenario, nervous=True, reps=2, home=tmp_path / "on")
+    off = run_arm(scenario, nervous=False, reps=2, home=tmp_path / "off")
+    # ON writes a scar and can recall it; OFF has no memory layer at all.
+    assert on["totals"]["scars_written"] >= 1
+    assert on["totals"]["markers_recalled"] >= 1
+    assert off["totals"]["scars_written"] == 0
+    assert off["totals"]["markers_recalled"] == 0

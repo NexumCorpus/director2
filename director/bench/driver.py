@@ -32,7 +32,9 @@ def _build_director(cfg: Config, scenario: FaultScenario, project):
     delegate = SubAgentRunner(cfg, router, registry)
     title_index = {t.id: t.title for t in project.tasks.values()}
     runner = ScriptedFaultRunner(delegate, scenario, title_index=title_index)
-    director = Director(cfg, store, router, registry, runner)
+    from ..memory.markers import MarkerStore
+    markers = MarkerStore(cfg) if cfg.nervous_enabled else None
+    director = Director(cfg, store, router, registry, runner, markers=markers)
     return director, store, runner
 
 
@@ -96,6 +98,14 @@ def _run_once(scenario: FaultScenario, *, nervous: bool, home: Path,
 
     director._run_since = None      # this run's anchor is spent
     screams = [c for c in cycles if c["scream"]]
+    markers = getattr(director, "markers", None)
+    scars_written = len(markers.index) if markers is not None else 0
+    if markers is not None:
+        from ..memory.markers import task_signature
+        markers_recalled = sum(len(markers.recall(task_signature(t)))
+                               for t in project.tasks.values())
+    else:
+        markers_recalled = 0
     return {
         "nervous": nervous,
         "cycles": cycles,
@@ -105,6 +115,8 @@ def _run_once(scenario: FaultScenario, *, nervous: bool, home: Path,
         "final_damage": cycles[-1]["accumulated_damage"] if cycles else 0.0,
         "cycles_run": len(cycles),
         "outcome": cycles[-1]["status"] if cycles else "drained",
+        "scars_written": scars_written,
+        "markers_recalled": markers_recalled,
     }
 
 
@@ -121,6 +133,8 @@ def run_arm(scenario: FaultScenario, *, nervous: bool, reps: int,
         "diagnostic_tasks": sum(r["diagnostic_tasks"] for r in runs),
         "cycles_run": sum(r["cycles_run"] for r in runs),
         "final_damage": sum(r["final_damage"] for r in runs),
+        "scars_written": sum(r["scars_written"] for r in runs),
+        "markers_recalled": sum(r["markers_recalled"] for r in runs),
     }
     return {"arm": arm, "scenario": scenario.name, "reps": reps,
             "runs": runs, "totals": totals}
@@ -136,7 +150,8 @@ def _spread(runs: list[dict], key: str) -> dict:
 
 def compare(on_results: dict, off_results: dict) -> dict:
     """ON-vs-OFF comparison summary with per-arm spread (never a single run)."""
-    metrics = ("screams_fired", "diagnostic_tasks", "cycles_run", "final_damage")
+    metrics = ("screams_fired", "diagnostic_tasks", "cycles_run",
+               "final_damage", "scars_written", "markers_recalled")
     out: dict = {}
     for m in metrics:
         on_v = on_results["totals"][m]
