@@ -880,13 +880,16 @@ class Director:
         declared stop condition fires. The loop OWNS NO STATE. `since` is
         captured ONCE at entry so the budget stop and resource_bleed see
         run-scoped tokens, not the lifetime ledger."""
+        import time
         from ..evolve.metrics import PerfLedger
         perf = getattr(self, "perf", None) or PerfLedger(self.cfg)
         since = utcnow().isoformat()
+        started_at = time.monotonic()
         cycles = 0
         while True:
             project = self.store.load(project_ref)
-            reason = self.stop(project, perf=perf, since=since)
+            reason = self.stop(project, perf=perf, since=since,
+                               cycles=cycles, started_at=started_at)
             if reason is not None:
                 return {"status": "stopped", "stop_reason": reason,
                         "cycles": cycles, "since": since}
@@ -907,17 +910,28 @@ class Director:
             return "open_packet"
         if getattr(project, "scream_open", None):
             return "latch_held"
+        budget = getattr(self.cfg, "budget", None)
+        if budget:
+            if budget.get("max_cycles") is not None \
+                    and cycles >= budget["max_cycles"]:
+                return "budget_cycles"
+            if budget.get("max_tokens") is not None:
+                st = perf.stats(since=since)
+                tok = st.get("prompt_tokens", 0) + st.get("completion_tokens", 0)
+                if tok >= budget["max_tokens"]:
+                    return "budget_tokens"
+            if budget.get("max_wall_clock") is not None \
+                    and started_at is not None \
+                    and (time.monotonic() - started_at) >= budget["max_wall_clock"]:
+                return "budget_wall_clock"
         running = any(t.status is TaskStatus.RUNNING
                       for t in project.tasks.values())
         ready = ready_tasks(project)
-        # 4. done — every task done AND nothing runnable (NOT all-milestones,
-        # which is vacuously true with zero milestones -> would halt on cycle 0).
         summary = graph_summary(project)
         if (summary["done"] == summary["tasks_total"]
                 and summary["tasks_total"] > 0
                 and not ready and not running):
             return "done"
-        # 5. work drained — covers the no-tasks / no-milestones case too.
         if not ready and not running:
             return "drained"
         return None

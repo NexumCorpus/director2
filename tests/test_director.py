@@ -418,3 +418,43 @@ def test_run_stops_on_integrity_tamper_first(cfg):
     out = boss.run(p.id, autonomous=True)
     assert out["stop_reason"] == "integrity_tamper"
     assert out["cycles"] == 0
+
+
+# --------------------------------------------------------- phase 4.5: budget stop
+def test_run_budget_tokens_is_run_scoped(cfg):
+    boss = _loop_boss(cfg)
+    p = _seed_two_task_project(boss, "budgettokens")
+    cfg.budget = {"max_tokens": 100}
+    from director.evolve.metrics import PerfLedger
+    perf = PerfLedger(cfg)
+    perf.record({"ts": "2000-01-01T00:00:00+00:00", "ok": True,
+                 "prompt_tokens": 9999, "completion_tokens": 9999,
+                 "backend": "mock", "kind": "x"})
+    boss.perf = perf
+    out = boss.run(p.id, autonomous=True)
+    assert out["stop_reason"] in ("done", "drained")
+
+
+def test_run_no_budget_never_trips_budget_stop(cfg):
+    boss = _loop_boss(cfg)
+    p = _seed_two_task_project(boss, "nobudget")
+    assert cfg.budget is None
+    out = boss.run(p.id, autonomous=True)
+    assert out["stop_reason"] in ("done", "drained")
+    assert "budget" not in out["stop_reason"]
+
+
+def test_run_budget_cycles_trips_before_drain(cfg):
+    boss = _loop_boss(cfg)
+    p = Project(name="budgettrip")
+    t1 = Task(title="first")
+    t2 = Task(title="second", depends_on=[t1.id])
+    p.tasks = {t1.id: t1, t2.id: t2}
+    refresh_statuses(p)
+    boss.store.save(p)
+    cfg.budget = {"max_cycles": 1}
+    out = boss.run(p.id, autonomous=True)
+    assert out["stop_reason"] == "budget_cycles"
+    assert out["cycles"] == 1
+    p2 = boss.store.load(p.id)
+    assert any(t.status is not TaskStatus.DONE for t in p2.tasks.values())
