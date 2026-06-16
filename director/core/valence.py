@@ -20,8 +20,8 @@ from __future__ import annotations
 from .integrity import (integrity_summary, integrity_violations,
                         report_integrity)
 from .taskgraph import open_risks
-from .convictions import evaluate_packet_coherence, honest_check
-from .types import (BodyState, CheckKind, PacketStatus, Project, RiskLevel,
+from .convictions import evaluate_packet_coherence
+from .types import (BodyState, PacketStatus, Project, RiskLevel,
                     RiskStatus, TaskStatus)
 
 __all__ = ["BodyState", "compute_body"]
@@ -65,23 +65,35 @@ def _severity_charter_integrity(project: Project, *, cfg) -> float:
 
 
 def _severity_uncertainty(project: Project, *, cfg) -> float:
-    """Raw uncertainty = NEEDS_VERIFY task count + JUDGED-not-VERIFIED option
-    count over open (PRESENTED) packets + a no-real-choice packet-coherence signal.
-    Reads honest_check and evaluate_packet_coherence; both trusted, model-free."""
+    """Raw uncertainty = ANOMALOUS signals only (live-bench recalibration): the
+    NEEDS_VERIFY task count + calibration abstentions (a conviction the system has
+    acted on whose track record is resolved-but-unproven, i.e. ``rate is None``
+    below MIN_SAMPLE) + no-real-choice packet-coherence spread (a PRESENTED packet
+    whose options collapse to a single conviction).
+
+    The raw count of JUDGED options is deliberately NOT counted: ``judged`` is the
+    DEFAULT state of every option (only a trusted oracle ever makes one VERIFIED),
+    so counting it fired on every open decision regardless of genuine uncertainty
+    and pushed a fresh project to valence ~-0.167 just for having an opening packet
+    (live finding). Trusted, model-free."""
+    from .calibration import calibration_record
     needs_verify = sum(1 for t in project.tasks.values()
                        if t.status is TaskStatus.NEEDS_VERIFY)
-    judged = 0
+    # calibration abstentions: convictions acted on but not yet calibratable
+    # (resolved >= 1 yet rate is None below MIN_SAMPLE) — genuine "acting without
+    # a proven track record" uncertainty, and zero on a fresh project.
+    abstentions = sum(1 for r in calibration_record(project).values()
+                      if r.get("resolved", 0) > 0 and r.get("rate") is None)
+    # no-real-choice packets: an illusory decision (one conviction across options)
+    # is a real uncertainty signal; a normal multi-conviction packet is NOT.
+    degenerate = 0
     for pkt in project.packets.values():
         if pkt.status is not PacketStatus.PRESENTED:
             continue
-        for o in pkt.options:
-            kind, _ = honest_check(o, project.artifacts)
-            if kind == CheckKind.JUDGED:
-                judged += 1
         coh = evaluate_packet_coherence(pkt, project)
         if coh["spread"] < 2 and len(pkt.options) >= 2:
-            judged += 1
-    raw = needs_verify + judged
+            degenerate += 1
+    raw = needs_verify + abstentions + degenerate
     return _clamp01(raw, cfg.axis_saturation["uncertainty"])
 
 

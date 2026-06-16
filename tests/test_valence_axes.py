@@ -170,7 +170,11 @@ def test_uncertainty_counts_needs_verify():
     assert abs(s - 2.0 / 4.0) < 1e-9
 
 
-def test_uncertainty_counts_judged_options_in_open_packets():
+def test_uncertainty_ignores_normal_judged_packet():
+    # RECALIBRATION (live-bench finding): judged is the DEFAULT state of every
+    # option, so a normal open decision (distinct-conviction options, real spread)
+    # must NOT inflate uncertainty — only anomalous signals do. Previously this
+    # packet counted 2 judged options -> 0.5; now it must read 0.
     cfg = Config()
     p = _proj()
     pkt = CommandPacket(title="t", status=PacketStatus.PRESENTED, options=[
@@ -179,8 +183,21 @@ def test_uncertainty_counts_judged_options_in_open_packets():
         CommandOption(key="B", label="B", conviction="iconoclast",
                       check=CheckKind.JUDGED)])
     p.packets = {pkt.id: pkt}
-    s = _severity_uncertainty(p, cfg=cfg)
-    assert abs(s - 2.0 / 4.0) < 1e-9
+    assert _severity_uncertainty(p, cfg=cfg) == 0.0
+
+
+def test_uncertainty_counts_no_real_choice_packet():
+    # a degenerate packet whose options collapse to ONE conviction (spread < 2) is
+    # an illusory decision -> a genuine uncertainty signal (raw 1 / saturation 4).
+    cfg = Config()
+    p = _proj()
+    pkt = CommandPacket(title="t", status=PacketStatus.PRESENTED, options=[
+        CommandOption(key="A", label="A", conviction="dogmatic",
+                      check=CheckKind.JUDGED),
+        CommandOption(key="B", label="B", conviction="dogmatic",
+                      check=CheckKind.JUDGED)])
+    p.packets = {pkt.id: pkt}
+    assert abs(_severity_uncertainty(p, cfg=cfg) - 1.0 / 4.0) < 1e-9
 
 
 def test_uncertainty_ignores_answered_packets():
