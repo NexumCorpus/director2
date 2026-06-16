@@ -98,6 +98,29 @@ class Config:
     block_on_low_evaluation: bool = False
     min_evaluation_score: float = 3.0
 
+    # --- nervous system (v1) ----------------------------------------------------
+    # DEFAULT FALSE: the existing test suite stays byte-identical until ON. The
+    # numbers below are deliberate first-guesses, tuned later via the bench —
+    # declared here once, never hardcoded elsewhere.
+    nervous_enabled: bool = False
+    valence_weights: dict = field(default_factory=lambda: {
+        "charter_integrity": 0.30, "accumulated_damage": 0.40,
+        "uncertainty": 0.20, "resource_bleed": 0.10})   # sum to 1
+    ache_threshold: float = -0.33      # composite crosses here -> ache (a wince)
+    siren_threshold: float = -0.66     # composite crosses here -> siren (packet + latch)
+    valence_eps: float = 0.05          # fragile band half-width around a threshold
+    hysteresis_margin: float = 0.10    # clear-rule recovery margin (no flap)
+    charter_breach_threshold: float = 0.90  # charter_integrity severity -> hard siren
+    axis_saturation: dict = field(default_factory=lambda: {
+        "accumulated_damage": 5.0, "charter_integrity": 3.0,
+        "uncertainty": 4.0})           # raw signal value at which severity == 1.0
+    budget: dict | None = None         # {max_cycles, max_tokens, max_wall_clock} or None -> abstain
+    max_held_cycles: int = 20          # latch deadlock guard -> escalate at this hop count
+    director_temperature: float | None = None  # pins director-role temperature when set
+    bench: dict = field(default_factory=lambda: {
+        "arms": ["on", "off"], "reps": 5, "fault_scenario": "default",
+        "model_pin": "claude-sonnet-4-6", "temperature": 0.0})
+
     # --- sandbox / grounding ----------------------------------------------------
     sandbox_timeout_s: float = 20.0
     sandbox_mem_cap_mb: int = 1024
