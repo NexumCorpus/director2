@@ -53,6 +53,15 @@ def _severity_accumulated_damage(project: Project, *, secret: bytes,
     return _clamp01(raw, cfg.axis_saturation["accumulated_damage"])
 
 
+def _severity_charter_integrity(project: Project, *, cfg) -> float:
+    """Raw charter erosion = milestone reverts + coherence blocks + open CRITICAL
+    grounding risks. Scaled by the declared charter_integrity saturation."""
+    critical = sum(1 for r in open_risks(project)
+                   if r.level is RiskLevel.CRITICAL)
+    raw = project.milestone_reverts + project.coherence_blocks + critical
+    return _clamp01(raw, cfg.axis_saturation["charter_integrity"])
+
+
 def compute_body(project: Project, *, secret: bytes, perf, since, cfg) -> BodyState:
     """Recompute the trusted valence projection. Pure reducer; never calls a model."""
     integrity_rows = report_integrity(project, secret)
@@ -60,13 +69,14 @@ def compute_body(project: Project, *, secret: bytes, perf, since, cfg) -> BodySt
     damage = _severity_accumulated_damage(project, secret=secret, cfg=cfg,
                                           violations=len(violators))
 
-    charter = _INSUFFICIENT
+    charter = _severity_charter_integrity(project, cfg=cfg)
+
+    # axes not yet wired in this task default to neutral / abstain
     uncertainty = 0.0
     bleed = _INSUFFICIENT
 
-    severities = {"accumulated_damage": damage, "uncertainty": uncertainty}
-    if charter != _INSUFFICIENT:
-        severities["charter_integrity"] = charter
+    severities = {"accumulated_damage": damage, "uncertainty": uncertainty,
+                  "charter_integrity": charter}
     if bleed != _INSUFFICIENT:
         severities["resource_bleed"] = bleed
 

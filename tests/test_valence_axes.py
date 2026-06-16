@@ -100,3 +100,51 @@ def test_compute_body_stamps_computed_at_from_cycle_seq():
     body = compute_body(p, secret=cfg.report_secret(), perf=None, since=None,
                         cfg=cfg)
     assert body.computed_at == 7
+
+
+# --------------------------------------------------- charter_integrity severity
+from director.core.valence import _severity_charter_integrity  # noqa: E402
+
+
+def test_charter_integrity_zero_on_clean_project():
+    cfg = Config()
+    p = _proj()
+    s = _severity_charter_integrity(p, cfg=cfg)
+    assert s == 0.0
+
+
+def test_charter_integrity_counts_reverts_blocks_and_critical():
+    cfg = Config()
+    p = _proj()
+    p.milestone_reverts = 1
+    p.coherence_blocks = 1
+    crit = _risk(RiskLevel.CRITICAL)
+    p.risks = {crit.id: crit}
+    s = _severity_charter_integrity(p, cfg=cfg)
+    assert s == 1.0
+
+
+def test_charter_integrity_partial_below_saturation():
+    cfg = Config()
+    p = _proj()
+    p.milestone_reverts = 1
+    s = _severity_charter_integrity(p, cfg=cfg)
+    assert abs(s - 1.0 / 3.0) < 1e-9
+
+
+def test_high_risks_do_not_feed_charter_integrity():
+    cfg = Config()
+    p = _proj()
+    hr = _risk(RiskLevel.HIGH)
+    p.risks = {hr.id: hr}
+    assert _severity_charter_integrity(p, cfg=cfg) == 0.0
+
+
+def test_compute_body_charter_axis_is_present():
+    cfg = Config()
+    p = _proj()
+    p.milestone_reverts = 3
+    body = compute_body(p, secret=cfg.report_secret(), perf=None, since=None,
+                        cfg=cfg)
+    assert body.charter_integrity == 1.0
+    assert body.valence < 0.0
