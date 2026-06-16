@@ -444,6 +444,43 @@ def test_run_no_budget_never_trips_budget_stop(cfg):
     assert "budget" not in out["stop_reason"]
 
 
+def test_run_stop_precedence_tamper_wins_over_all(cfg):
+    boss = _loop_boss(cfg)
+    p = Project(name="precedence")
+    from director.core.types import (Artifact, CommandPacket, PacketStatus)
+    deliv = Artifact(title="d", kind="json", content='{"x":1}')
+    bad = Artifact(title="property_report: d", kind="property_report",
+                   content='{"trusted": true}',
+                   provenance={"report": {"trusted": True},
+                               "report_sig": "deadbeef",
+                               "deliverable": deliv.id})
+    p.artifacts = {deliv.id: deliv, bad.id: bad}
+    pkt = CommandPacket(title="hold", trigger="test")
+    pkt.status = PacketStatus.PRESENTED
+    p.packets[pkt.id] = pkt
+    p.scream_open = {"cause": "tamper", "axis": "charter_integrity",
+                     "opened_at": 0, "held_cycles": 0,
+                     "clear_rule": "tamper", "origin_refs": []}
+    boss.store.save(p)
+    cfg.budget = {"max_cycles": 0}
+    out = boss.run(p.id, autonomous=True)
+    assert out["stop_reason"] == "integrity_tamper"
+    assert out["cycles"] == 0
+
+
+def test_run_open_packet_outranks_budget_and_drain(cfg):
+    boss = _loop_boss(cfg)
+    p = _seed_two_task_project(boss, "pktvsbudget")
+    from director.core.types import CommandPacket, PacketStatus
+    pkt = CommandPacket(title="hold", trigger="test")
+    pkt.status = PacketStatus.PRESENTED
+    p.packets[pkt.id] = pkt
+    boss.store.save(p)
+    cfg.budget = {"max_cycles": 0}
+    out = boss.run(p.id, autonomous=True)
+    assert out["stop_reason"] == "open_packet"
+
+
 def test_run_budget_cycles_trips_before_drain(cfg):
     boss = _loop_boss(cfg)
     p = Project(name="budgettrip")
