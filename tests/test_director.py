@@ -368,3 +368,31 @@ def test_run_does_not_vacuously_halt_with_zero_milestones(cfg):
     assert out["cycles"] == 1, "loop must run >=1 cycle, not halt vacuously"
     p2 = boss.store.load(p.id)
     assert p2.tasks[t1.id].status is TaskStatus.DONE
+
+
+# --------------------------------------------------------- phase 4.3: open packet / latch stop
+def test_run_stops_on_open_packet(cfg):
+    boss = _loop_boss(cfg)
+    p = _seed_two_task_project(boss, "pktstop")
+    from director.core.types import CommandPacket, PacketStatus
+    pkt = CommandPacket(title="hold", trigger="test")
+    pkt.status = PacketStatus.PRESENTED
+    p.packets[pkt.id] = pkt
+    boss.store.save(p)
+    out = boss.run(p.id, autonomous=True)
+    assert out["stop_reason"] == "open_packet"
+    assert out["cycles"] == 0
+    p2 = boss.store.load(p.id)
+    assert p2.tasks[next(iter(p2.tasks))].status is not TaskStatus.DONE
+
+
+def test_run_stops_on_open_scream_latch(cfg):
+    boss = _loop_boss(cfg)
+    p = _seed_two_task_project(boss, "latchstop")
+    p.scream_open = {"cause": "grounding_damage", "axis": "accumulated_damage",
+                     "opened_at": 0, "held_cycles": 1,
+                     "clear_rule": "grounding_damage", "origin_refs": []}
+    boss.store.save(p)
+    out = boss.run(p.id, autonomous=True)
+    assert out["stop_reason"] == "latch_held"
+    assert out["cycles"] == 0

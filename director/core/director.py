@@ -36,6 +36,7 @@ from ..llm.router import LLMRouter
 from ..logging_setup import get_logger
 from ..verify import VerifierRegistry
 from .coherence import apply_delta, coherence_pass
+from .integrity import integrity_violations, report_integrity
 from .convictions import (conviction_rank, conviction_read,
                           evaluate_packet_coherence, honest_check,
                           verifier_favored_key)
@@ -898,6 +899,10 @@ class Director:
     def stop(self, project: Project, *, perf, since,
              cycles: int = 0, started_at: float | None = None) -> str | None:
         """The declared stop predicate, in precedence order (spec section 6)."""
+        if self._open_packets(project):
+            return "open_packet"
+        if getattr(project, "scream_open", None):
+            return "latch_held"
         running = any(t.status is TaskStatus.RUNNING
                       for t in project.tasks.values())
         ready = ready_tasks(project)
