@@ -39,10 +39,18 @@ def _boss(cfg, markers):
 
 def _two_ready(cfg):
     p = Project(name="gm")
+    # distinct objectives so the two signatures do NOT spuriously collide under
+    # the fuzzy recall threshold (marker_recall_sim=0.6): "implement the payment
+    # retry ledger" vs "render the analytics dashboard charts" embed at cosine
+    # ~0.23, so only the scarred task recalls its own scar. (The earlier
+    # "the painful/fresh one" pair shared the "the ___ one" scaffold -> cosine
+    # 0.617 > 0.6, which made the CLEAN task also read as scarred.)
     scarred = Task(title="Scarred", role="code", module_id="m1",
-                   objective="the painful one", status=TaskStatus.READY)
+                   objective="implement the payment retry ledger",
+                   status=TaskStatus.READY)
     clean = Task(title="Clean", role="code", module_id="m1",
-                 objective="the fresh one", status=TaskStatus.READY)
+                 objective="render the analytics dashboard charts",
+                 status=TaskStatus.READY)
     p.tasks = {scarred.id: scarred, clean.id: clean}
     return p, scarred, clean
 

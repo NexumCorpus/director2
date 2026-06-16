@@ -946,8 +946,8 @@ class Director:
         frontier = ready_tasks(project)        # all READY, canonical order
         scored = []
         for i, t in enumerate(frontier):
-            repel = sum(m.weight for m in self.markers.recall(
-                task_signature(t), min_sim=self.cfg.marker_merge_sim))
+            repel = sum(m.weight
+                        for m in self.markers.recall(task_signature(t)))
             scored.append((repel, i, t))        # repel <= 0; i = canonical tiebreak
         scored.sort(key=lambda x: (-x[0], x[1]))   # least-repelled (repel desc) first
         batch = [t for _, _, t in scored[:limit]]
