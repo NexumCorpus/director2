@@ -57,3 +57,26 @@ def test_new_project_no_sink_default_call_still_works(cfg):
     director, store = _director(cfg)
     project, packet = director.new_project("plain", "ship verified x")
     assert project.tasks and packet
+
+
+def test_off_path_uses_structured_not_stream(cfg, monkeypatch):
+    # OFF byte-identical, proven by interception: with the gate off, _plan must
+    # call router.structured and must NOT call router.stream_structured
+    cfg.stream_generation = False
+    director, _ = _director(cfg)
+    calls = {"structured": 0, "stream": 0}
+    real_structured = director.router.structured
+
+    def spy_structured(*a, **k):
+        calls["structured"] += 1
+        return real_structured(*a, **k)
+
+    def spy_stream(*a, **k):
+        calls["stream"] += 1
+        raise AssertionError("stream_structured must not run when gate is OFF")
+
+    monkeypatch.setattr(director.router, "structured", spy_structured)
+    monkeypatch.setattr(director.router, "stream_structured", spy_stream)
+    plan = director._plan("ship x", on_event=lambda e: None)
+    assert plan.tasks
+    assert calls["structured"] == 1 and calls["stream"] == 0
