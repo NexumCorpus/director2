@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "director2"
+version = "2.0.0"
+description = "Director 2.0 - persistent recursive AI symbiont orchestration framework (command loop + discovery loop)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Nexum" }]
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+mem = ["psutil>=5.9"]
+
+[project.scripts]
+director = "director.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["director*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
