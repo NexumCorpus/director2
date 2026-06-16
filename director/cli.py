@@ -56,9 +56,11 @@ class Services:
         self.runner = SubAgentRunner(
             self.cfg, self.router, self.registry,
             lessons_digest=self.lessons.digest(), prompts=self.prompts)
+        from .memory.markers import MarkerStore
+        markers = MarkerStore(self.cfg) if self.cfg.nervous_enabled else None
         self.director = Director(self.cfg, self.store, self.router,
                                  self.registry, self.runner,
-                                 lessons=self.lessons)
+                                 lessons=self.lessons, markers=markers)
         if self.router.is_mock:
             click.secho("[!] MOCK MODE: no API keys found - deterministic "
                         "fixtures, not a real model. Set keys in .env.",

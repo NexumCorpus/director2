@@ -298,7 +298,7 @@ PACKET_SYSTEM = (
 class Director:
     def __init__(self, cfg: Config, store: ProjectStore, router: LLMRouter,
                  registry: VerifierRegistry, runner: SubAgentRunner,
-                 *, lessons=None, perf=None):
+                 *, lessons=None, perf=None, markers=None):
         self.cfg = cfg
         self.store = store
         self.router = router
@@ -306,6 +306,7 @@ class Director:
         self.runner = runner
         self.lessons = lessons                 # LessonLedger | None (memory pkg)
         self.perf = perf                       # PerfLedger | None (run-scoped token burn)
+        self.markers = markers                 # MarkerStore | None (gut markers v2)
         self._run_since = None                 # perf.stats(since=...) anchor for this run
 
     # ------------------------------------------------------------------ audit
@@ -822,6 +823,9 @@ class Director:
                                 f"'{task.title}' failed after "
                                 f"{task.attempts} attempts: {res.error}",
                                 {"task_id": task.id})
+                    if self.cfg.nervous_enabled and self.markers is not None:
+                        self._record_scar(project, task,
+                                          cause="failed_verification")
                 else:
                     task.status = TaskStatus.READY     # retry next advance
             task.updated_at = utcnow()
@@ -928,6 +932,22 @@ class Director:
         if not ready and not running:
             return "drained"
         return None
+
+    # ----------------------------------------------------------- credit knife
+    def _record_scar(self, project: Project, task: Task, *, cause: str) -> None:
+        """Write a trusted scar for a RESOLVED failure (diagnoses-only). No model
+        call. Guarded by the caller behind cfg.nervous_enabled + self.markers."""
+        from ..memory.markers import Marker, task_signature
+        origin = task.origin_decision_id or f"plan:{task.module_id or 'root'}"
+        diagnosis = (f"Task '{task.title}' (role {task.role}) failed verification "
+                     f"after {task.attempts} attempt(s): "
+                     f"{(task.error or 'no detail')[:300]}")
+        self.markers.record(Marker(
+            signature=task_signature(task), cause=cause, diagnosis=diagnosis,
+            origin=origin, last_cycle=project.cycle_seq))
+        self._audit(project, "scar.recorded",
+                    f"scar on {task_signature(task)} ({cause})",
+                    {"task_id": task.id, "cause": cause})
 
     # ---------------------------------------------------------- nervous pass
     def _nervous_pass(self, project: Project, *, autonomous: bool) -> None:
