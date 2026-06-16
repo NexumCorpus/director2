@@ -207,6 +207,41 @@ def advance(project: str | None, max_tasks: int | None, force: bool) -> None:
 
 
 @main.command()
+@click.option("--arm", type=click.Choice(["on", "off", "both"]),
+              default="both", help="Which arm(s) to run.")
+@click.option("--reps", type=int, default=5)
+@click.option("--scenario", "scenario_name", default="default")
+def bench(arm: str, reps: int, scenario_name: str) -> None:
+    """Run the observation bench: nervous ON vs OFF on a scripted fault."""
+    from .bench.driver import compare, run_arm
+    from .bench.report import summary_lines, write_trace
+    from .bench.scenarios import get_scenario
+
+    svc = _services()
+    scenario = get_scenario(scenario_name)
+    out_dir = svc.cfg.runs_dir / "bench" / scenario.name
+    results: dict = {}
+    if arm in ("on", "both"):
+        results["on"] = run_arm(scenario, nervous=True, reps=reps,
+                                home=out_dir / "on")
+        write_trace(out_dir / "trace_on.jsonl", results["on"])
+    if arm in ("off", "both"):
+        results["off"] = run_arm(scenario, nervous=False, reps=reps,
+                                 home=out_dir / "off")
+        write_trace(out_dir / "trace_off.jsonl", results["off"])
+
+    if "on" in results and "off" in results:
+        for line in summary_lines(compare(results["on"], results["off"])):
+            click.echo(line)
+    else:
+        only = results.get("on") or results.get("off")
+        click.secho(f"== BENCH: nervous ON vs OFF == (single arm: {arm})",
+                    fg="cyan")
+        click.echo(f"{only['arm']}: {only['totals']}")
+    click.secho(f"traces: {out_dir}", fg="cyan")
+
+
+@main.command()
 @click.argument("project", required=False)
 @click.option("--cycles", type=int, default=None,
               help="Max autonomous cycles (advance calls); unbounded if unset.")

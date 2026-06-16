@@ -246,3 +246,15 @@ def test_summary_lines_render_on_off_block(tmp_path):
     assert "screams_fired" in text
     assert "ON" in text and "OFF" in text
     assert "delta" in text.lower()
+
+
+def test_cli_bench_command_default_scenario(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+    from director.cli import main
+    monkeypatch.setenv("DIRECTOR_HOME", str(tmp_path / "ws"))
+    runner = CliRunner()
+    r = runner.invoke(main, ["bench", "--arm", "both", "--reps", "2"],
+                      catch_exceptions=False)
+    assert r.exit_code == 0
+    assert "nervous ON vs OFF" in r.output
+    assert "screams_fired" in r.output
