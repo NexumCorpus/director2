@@ -213,6 +213,18 @@ button.ghost:hover{color:var(--ink);background:var(--surface2)}
 .cardfoot button:hover{color:var(--info)}
 
 .composer{border-top:1px solid var(--line);padding:14px 28px}
+/* live generation pane — visually SEPARATE from verified artifacts/decisions;
+   honestly labeled generation (not reasoning). thinking-delta styling is the
+   reserved-but-dormant upgrade seam (claude_cli never emits it). */
+.livegen{border-top:1px solid var(--line2);background:rgba(55,224,245,.04);
+  padding:10px 28px;max-height:200px;overflow:auto}
+.livegen .lgh{font-size:11.5px;letter-spacing:.5px;text-transform:uppercase;
+  color:var(--accent-dim);display:flex;flex-direction:column;gap:2px}
+.livegen .lgsub{text-transform:none;letter-spacing:0;color:var(--faint);
+  font-size:11px}
+.livegen .lgbody{white-space:pre-wrap;word-break:break-word;color:var(--dim);
+  font-size:12.5px;margin:6px 0 0}
+.livegen .think{color:var(--pivot)}     /* dormant: reserved thinking_delta tier */
 .cin{max-width:740px;margin:0 auto;display:flex;gap:9px;align-items:center}
 .cin input{flex:1;background:var(--surface);border:1px solid var(--line2);
   color:var(--ink);border-radius:10px;padding:11px 14px;font:inherit;
@@ -522,6 +534,11 @@ function renderProject(){
       </div>
     </div>
     <div class="scroll"><div class="col" id="thread"></div></div>
+    <div id="livegen" class="livegen" hidden>
+      <div class="lgh">Live generation
+        <span class="lgsub">model output as it's written — not hidden reasoning
+        (the subscription backend doesn't expose reasoning)</span></div>
+      <pre id="livegen-body" class="lgbody mono"></pre></div>
     <div class="composer" id="composer"></div>`;
   renderThread();renderComposer();
 }
@@ -670,6 +687,37 @@ async function decide(pid,response){
     await loadProject();loadOverview();
   }catch(e){toast(""+e.message,true);}
 }
+/* live generation: open an SSE channel and append GENERATION deltas to the
+   honestly-labeled pane. A reserved thinking_delta branch is present but dormant
+   — claude_cli never emits it (the upgrade seam for an Anthropic-API backend). */
+let liveSrc=null;
+function openLiveGen(pid){
+  if(liveSrc){try{liveSrc.close();}catch(e){}}
+  const pane=$("#livegen"),body=$("#livegen-body");
+  if(!pane||!body)return;
+  body.textContent="";        // OFF byte-identical at the UI: the pane stays
+                              // HIDDEN until a REAL delta arrives, so a gate-off
+                              // run (no deltas, only the sentinel) shows nothing.
+  try{liveSrc=new EventSource(api+"/project/"+pid+"/stream");}
+  catch(e){return;}
+  liveSrc.onmessage=ev=>{
+    let d;try{d=JSON.parse(ev.data);}catch(_){return;}
+    if(d.type==="text_delta"){
+      pane.hidden=false;                            /* reveal on first generation */
+      body.appendChild(document.createTextNode(d.text||""));
+      pane.scrollTop=pane.scrollHeight;
+    }else if(d.type==="thinking_delta"){            /* dormant reserved tier */
+      pane.hidden=false;
+      const s=document.createElement("span");s.className="think";
+      s.textContent=d.text||"";body.appendChild(s);
+      pane.scrollTop=pane.scrollHeight;
+    }else if(d.type==="done"){
+      try{liveSrc.close();}catch(_){}
+      liveSrc=null;
+    }
+  };
+  liveSrc.onerror=()=>{try{liveSrc.close();}catch(_){}liveSrc=null;};
+}
 async function op(kind,force){
   try{const out=await jpost(api+"/project/"+CUR+"/"+kind,{force:!!force});
     if(out.error)toast(out.error,true);else toast(kind+" started…");pollOp();
@@ -816,7 +864,14 @@ async function createProject(){
   try{const out=await jpost(api+"/new",{name,objective:obj});
     if(out.error){toast(out.error,true);return;}
     pendingNew=true;toast("Planning…");
-    $("#main").innerHTML=`<div class="empty">Drawing up the plan…</div>`;pollOp();
+    $("#main").innerHTML=`<div class="newform"><h2>Drawing up the plan…</h2>
+      <div id="livegen" class="livegen" hidden>
+        <div class="lgh">Live generation
+          <span class="lgsub">model output as it's written — not hidden reasoning
+          (the subscription backend doesn't expose reasoning)</span></div>
+        <pre id="livegen-body" class="lgbody mono"></pre></div></div>`;
+    openLiveGen("new");
+    pollOp();
   }catch(e){toast(""+e.message,true);}
 }
 

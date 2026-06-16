@@ -99,6 +99,49 @@ class BridgeHub:
                     "started_at": "", "elapsed_s": 0.0,
                     "result": None, "error": ""}
         self._op_t0 = 0.0
+        # live generation side-channel: per-stream-key append-only event lists,
+        # guarded by _lock (mirrors the _op discipline). The cursor is just the
+        # list length, so an SSE reader resumes from where it left off. Keyed by
+        # project id for advance; by the op key "new" until the project id exists.
+        self._streams: dict[str, list[dict]] = {}
+
+    # -------------------------------------------------------- live generation
+    def _make_stream_sink(self, key: str):
+        """Return a thread-safe sink closure that appends generation events to
+        ``key``'s buffer. The closure is handed to the Director plan surface and
+        is called from the background advance/new-project thread; it mirrors the
+        _op lock discipline. Best-effort: it never raises into the model call."""
+        def sink(event: dict) -> None:
+            try:
+                with self._lock:
+                    self._streams.setdefault(key, []).append(dict(event))
+            except Exception:                                 # noqa: BLE001
+                pass
+        return sink
+
+    def _close_stream(self, key: str) -> None:
+        """Append the terminal sentinel so an SSE reader knows the run is done."""
+        with self._lock:
+            self._streams.setdefault(key, []).append({"type": "done"})
+
+    def _stream_since(self, key: str, cursor: int) -> tuple[list[dict], int]:
+        """Return (new events after ``cursor``, new cursor). Read-only over the
+        buffer under the lock — the SSE loop polls this and never mutates."""
+        with self._lock:
+            buf = self._streams.get(key, [])
+            new = buf[cursor:]
+            return [dict(e) for e in new], len(buf)
+
+    def _stream_has_sentinel(self, key: str) -> bool:
+        with self._lock:
+            buf = self._streams.get(key, [])
+            return bool(buf) and buf[-1].get("type") == "done"
+
+    def _reset_stream(self, key: str) -> None:
+        """Clear a key's buffer at the start of a fresh op so a new run doesn't
+        replay the previous run's deltas."""
+        with self._lock:
+            self._streams[key] = []
 
     # ------------------------------------------------------------------ reads
     def overview(self) -> dict:
@@ -314,6 +357,49 @@ class _Handler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, ValueError):
             raise DirectorError("request body is not valid JSON")
 
+    def _sse(self, pid: str) -> None:
+        """Server-Sent Events drain of the live-generation buffer. The dashboard
+        keys new-project generation under "new" until the project id exists, so
+        accept BOTH the project id and that op key. text/event-stream, no
+        Content-Length, flush per event, bounded poll loop, close on the terminal
+        sentinel — so a long-lived SSE response can't starve the threaded server.
+        Read-only over the buffer (the sink is the only writer)."""
+        key = pid
+        # the in-flight new-project op streams under "new"; route a request for
+        # the still-unnamed project (or the literal 'new' key) onto it
+        with self.hub._lock:
+            has_pid = key in self.hub._streams
+        if not has_pid and self.hub._op.get("kind") == "new":
+            key = "new"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        cursor = 0
+        deadline = time.time() + 600          # hard cap: never hang a thread forever
+        try:
+            while time.time() < deadline:
+                events, cursor = self.hub._stream_since(key, cursor)
+                done = False
+                for ev in events:
+                    self.wfile.write(
+                        ("data: " + json.dumps(ev, default=str)
+                         + "\n\n").encode("utf-8"))
+                    if ev.get("type") == "done":
+                        done = True
+                self.wfile.flush()
+                if done:
+                    break
+                # no new events: if the buffer is already sentinel-terminated we
+                # are finished; otherwise yield the thread briefly and re-poll
+                if not events and self.hub._stream_has_sentinel(key):
+                    break
+                if not events:
+                    time.sleep(0.1)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass     # client disconnected — best-effort observability, no error
+
     def do_GET(self) -> None:                                # noqa: N802
         url = urlparse(self.path)
         path = url.path.rstrip("/") or "/"
@@ -336,6 +422,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(200, self.hub.journal(m.group(1), n))
             elif m := re.fullmatch(r"/api/project/([\w-]+)/integrity", path):
                 self._send(200, self.hub.integrity(m.group(1)))
+            elif m := re.fullmatch(r"/api/project/([\w-]+)/stream", path):
+                self._sse(m.group(1))
             else:
                 self._send(404, {"error": f"no route {path}"})
         except NotFoundError as exc:
@@ -356,10 +444,16 @@ class _Handler(BaseHTTPRequestHandler):
                 if not name or not objective:
                     self._send(400, {"error": "name and objective required"})
                     return
+                self.hub._reset_stream("new")
+                sink = self.hub._make_stream_sink("new")
 
                 def _create():
-                    proj, _ = self.hub.director.new_project(name, objective)
-                    return {"project": proj.id, "name": proj.name}
+                    try:
+                        proj, _ = self.hub.director.new_project(
+                            name, objective, on_event=sink)
+                        return {"project": proj.id, "name": proj.name}
+                    finally:
+                        self.hub._close_stream("new")
 
                 out = self.hub.start_background("new", "", _create)
                 self._send(out.pop("status", 202) if isinstance(
