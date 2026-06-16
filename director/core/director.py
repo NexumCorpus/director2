@@ -899,6 +899,10 @@ class Director:
     def stop(self, project: Project, *, perf, since,
              cycles: int = 0, started_at: float | None = None) -> str | None:
         """The declared stop predicate, in precedence order (spec section 6)."""
+        import time
+        rows = report_integrity(project, self.cfg.report_secret())
+        if integrity_violations(rows):
+            return "integrity_tamper"
         if self._open_packets(project):
             return "open_packet"
         if getattr(project, "scream_open", None):

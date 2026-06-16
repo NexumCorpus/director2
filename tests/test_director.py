@@ -396,3 +396,25 @@ def test_run_stops_on_open_scream_latch(cfg):
     out = boss.run(p.id, autonomous=True)
     assert out["stop_reason"] == "latch_held"
     assert out["cycles"] == 0
+
+
+# --------------------------------------------------------- phase 4.4: integrity tamper stop
+def test_run_stops_on_integrity_tamper_first(cfg):
+    boss = _loop_boss(cfg)
+    p = _seed_two_task_project(boss, "tamper")
+    from director.core.types import Artifact, CommandPacket, PacketStatus
+    deliv = Artifact(title="d", kind="json", content='{"x":1}')
+    bad = Artifact(title="property_report: d", kind="property_report",
+                   content='{"trusted": true}',
+                   provenance={"report": {"trusted": True},
+                               "report_sig": "deadbeef",
+                               "deliverable": deliv.id})
+    p.artifacts[deliv.id] = deliv
+    p.artifacts[bad.id] = bad
+    pkt = CommandPacket(title="hold", trigger="test")
+    pkt.status = PacketStatus.PRESENTED
+    p.packets[pkt.id] = pkt
+    boss.store.save(p)
+    out = boss.run(p.id, autonomous=True)
+    assert out["stop_reason"] == "integrity_tamper"
+    assert out["cycles"] == 0
