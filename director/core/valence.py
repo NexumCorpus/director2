@@ -269,3 +269,72 @@ def _diagnosis_report(project: "Project", body: "BodyState", axis: str) -> str:
     pretty = axis.replace("_", " ")
     return (f"Damage on {pretty}: trusted state shows accumulated failures on "
             f"this axis from executed/verified work{detail}.")
+
+
+# ------------------------------------------------------------- clear rules
+def _integrity_violation_count(project: "Project", secret: bytes) -> int:
+    """Trusted re-check: how many property reports have a BROKEN binding
+    (tamper evidence). Mirrors integrity_summary(...)['violations']."""
+    return len(integrity_violations(report_integrity(project, secret)))
+
+
+def _charter_integrity_severity(project: "Project", secret: bytes,
+                                perf, since, cfg) -> float:
+    """Recompute just the charter_integrity axis severity via the Phase-1
+    reducer, so the clear rule re-verifies the SAME trusted fact."""
+    body = compute_body(project, secret=secret, perf=perf, since=since, cfg=cfg)
+    val = getattr(body, "charter_integrity", 0.0)
+    return float(val) if isinstance(val, (int, float)) else 0.0
+
+
+def _run_properties_repass(project: "Project", scream_open: dict) -> bool:
+    """Re-run trusted property checkers over the offending deliverable.
+    True iff it now passes its declared properties (the grounding re-pass)."""
+    from ..verify.properties import partial_bundle_ok, run_properties
+    refs = scream_open.get("origin_refs") or []
+    deliverable = None
+    for ref in refs:
+        art = project.artifacts.get(ref)
+        if art is not None and getattr(art, "kind", "") != "property_report":
+            deliverable = art
+            break
+    if deliverable is None:
+        return False
+    names = ["python_parses", "code_runs"] if deliverable.kind in (
+        "code", "python") else ["nonempty"]
+    report = run_properties(deliverable.content, names, ref=None,
+                            ref_independent=True)
+    return partial_bundle_ok(report) or bool(report.get("force_to_fail_ok"))
+
+
+def check_clear_rule(project: "Project", scream_open: dict, *, secret: bytes,
+                     perf, since, cfg) -> bool:
+    """True iff the declared per-cause clear condition RE-VERIFIES in trusted
+    code. Never reads packet disposition; never trusts an LLM 'it is fixed'."""
+    cause = (scream_open or {}).get("cause", "")
+    if cause == "tamper":
+        return _integrity_violation_count(project, secret) == 0
+    if cause == "charter_breach":
+        band = float(cfg.charter_breach_threshold) - float(cfg.hysteresis_margin)
+        return _charter_integrity_severity(
+            project, secret, perf, since, cfg) < band
+    if cause == "grounding_damage":
+        refs = scream_open.get("origin_refs") or []
+        has_risk_ref = any(r in project.risks for r in refs)
+        if has_risk_ref:
+            risks_closed = all(
+                project.risks[r].status in (RiskStatus.CLOSED,
+                                            RiskStatus.ACCEPTED)
+                for r in refs if r in project.risks)
+            return (risks_closed
+                    and _run_properties_repass(project, scream_open))
+        task_refs = [r for r in refs if r in project.tasks]
+        if task_refs:
+            no_longer_failed = all(
+                project.tasks[r].status is not TaskStatus.FAILED
+                for r in task_refs)
+            sev = _severity_accumulated_damage(project, secret=secret, cfg=cfg)
+            opened_sev = float(scream_open.get("opened_severity", 0.0))
+            return no_longer_failed and sev < opened_sev
+        return False
+    return False
