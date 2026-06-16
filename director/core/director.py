@@ -1379,7 +1379,9 @@ class Director:
                        status="succeeded" if res.ok else "failed",
                        output=res.output, reports=res.reports,
                        usage=res.usage, latency_s=res.latency_s,
-                       error=res.error, completed_at=utcnow())
+                       error=res.error,
+                       raw_generation=getattr(res, "raw_generation", ""),
+                       completed_at=utcnow())
         project.runs[run.id] = run
         return run
 

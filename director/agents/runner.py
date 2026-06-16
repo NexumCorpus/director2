@@ -59,6 +59,9 @@ class SubAgentRunner:
                 result.latency_s = resp.latency_s
                 result.usage = {"prompt_tokens": resp.prompt_tokens,
                                 "completion_tokens": resp.completion_tokens}
+                # capture the raw generation (was discarded): post-hoc replay +
+                # the live-stream's persisted record of what the model wrote
+                result.raw_generation = resp.text
 
             verifiers = [self.registry.get("agent_output")]
             for name in spec.verifiers:

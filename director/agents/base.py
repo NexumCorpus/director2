@@ -143,3 +143,7 @@ class AgentResult:
     usage: dict = field(default_factory=dict)
     latency_s: float = 0.0
     error: str = ""
+    # the raw model GENERATION text behind this result (was fetched then
+    # discarded). Pure upside even without streaming: a post-hoc replay/inspect
+    # view. Honest label: generation, not reasoning.
+    raw_generation: str = ""

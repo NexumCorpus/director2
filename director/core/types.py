@@ -291,6 +291,9 @@ class AgentRun:
     usage: dict = field(default_factory=dict)  # prompt_tokens, completion_tokens
     latency_s: float = 0.0
     error: str = ""
+    # the raw model GENERATION text behind this run (round-trips via the
+    # generic encode/decode — zero migration). Generation, not reasoning.
+    raw_generation: str = ""
     started_at: datetime = field(default_factory=utcnow)
     completed_at: datetime | None = None
 
