@@ -148,3 +148,54 @@ def test_compute_body_charter_axis_is_present():
                         cfg=cfg)
     assert body.charter_integrity == 1.0
     assert body.valence < 0.0
+
+
+# --------------------------------------------------------- uncertainty severity
+from director.core.types import (CheckKind, CommandOption, CommandPacket,  # noqa: E402
+                                 PacketStatus)
+from director.core.valence import _severity_uncertainty  # noqa: E402
+
+
+def test_uncertainty_zero_on_clean_project():
+    cfg = Config()
+    assert _severity_uncertainty(_proj(), cfg=cfg) == 0.0
+
+
+def test_uncertainty_counts_needs_verify():
+    cfg = Config()
+    p = _proj()
+    nv = [_task(status=TaskStatus.NEEDS_VERIFY) for _ in range(2)]
+    p.tasks = {t.id: t for t in nv}
+    s = _severity_uncertainty(p, cfg=cfg)
+    assert abs(s - 2.0 / 4.0) < 1e-9
+
+
+def test_uncertainty_counts_judged_options_in_open_packets():
+    cfg = Config()
+    p = _proj()
+    pkt = CommandPacket(title="t", status=PacketStatus.PRESENTED, options=[
+        CommandOption(key="A", label="A", conviction="dogmatic",
+                      check=CheckKind.JUDGED),
+        CommandOption(key="B", label="B", conviction="iconoclast",
+                      check=CheckKind.JUDGED)])
+    p.packets = {pkt.id: pkt}
+    s = _severity_uncertainty(p, cfg=cfg)
+    assert abs(s - 2.0 / 4.0) < 1e-9
+
+
+def test_uncertainty_ignores_answered_packets():
+    cfg = Config()
+    p = _proj()
+    pkt = CommandPacket(title="t", status=PacketStatus.ANSWERED, options=[
+        CommandOption(key="A", label="A", conviction="dogmatic",
+                      check=CheckKind.JUDGED)])
+    p.packets = {pkt.id: pkt}
+    assert _severity_uncertainty(p, cfg=cfg) == 0.0
+
+
+def test_uncertainty_saturates():
+    cfg = Config()
+    p = _proj()
+    p.tasks = {t.id: t for t in
+               [_task(status=TaskStatus.NEEDS_VERIFY) for _ in range(9)]}
+    assert _severity_uncertainty(p, cfg=cfg) == 1.0

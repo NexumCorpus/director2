@@ -20,7 +20,9 @@ from __future__ import annotations
 from .integrity import (integrity_summary, integrity_violations,
                         report_integrity)
 from .taskgraph import open_risks
-from .types import BodyState, Project, RiskLevel, RiskStatus, TaskStatus
+from .convictions import evaluate_packet_coherence, honest_check
+from .types import (BodyState, CheckKind, PacketStatus, Project, RiskLevel,
+                    RiskStatus, TaskStatus)
 
 __all__ = ["BodyState", "compute_body"]
 
@@ -62,6 +64,27 @@ def _severity_charter_integrity(project: Project, *, cfg) -> float:
     return _clamp01(raw, cfg.axis_saturation["charter_integrity"])
 
 
+def _severity_uncertainty(project: Project, *, cfg) -> float:
+    """Raw uncertainty = NEEDS_VERIFY task count + JUDGED-not-VERIFIED option
+    count over open (PRESENTED) packets + a no-real-choice packet-coherence signal.
+    Reads honest_check and evaluate_packet_coherence; both trusted, model-free."""
+    needs_verify = sum(1 for t in project.tasks.values()
+                       if t.status is TaskStatus.NEEDS_VERIFY)
+    judged = 0
+    for pkt in project.packets.values():
+        if pkt.status is not PacketStatus.PRESENTED:
+            continue
+        for o in pkt.options:
+            kind, _ = honest_check(o, project.artifacts)
+            if kind == CheckKind.JUDGED:
+                judged += 1
+        coh = evaluate_packet_coherence(pkt, project)
+        if coh["spread"] < 2 and len(pkt.options) >= 2:
+            judged += 1
+    raw = needs_verify + judged
+    return _clamp01(raw, cfg.axis_saturation["uncertainty"])
+
+
 def compute_body(project: Project, *, secret: bytes, perf, since, cfg) -> BodyState:
     """Recompute the trusted valence projection. Pure reducer; never calls a model."""
     integrity_rows = report_integrity(project, secret)
@@ -71,8 +94,7 @@ def compute_body(project: Project, *, secret: bytes, perf, since, cfg) -> BodySt
 
     charter = _severity_charter_integrity(project, cfg=cfg)
 
-    # axes not yet wired in this task default to neutral / abstain
-    uncertainty = 0.0
+    uncertainty = _severity_uncertainty(project, cfg=cfg)
     bleed = _INSUFFICIENT
 
     severities = {"accumulated_damage": damage, "uncertainty": uncertainty,
