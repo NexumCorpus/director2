@@ -493,7 +493,8 @@ class Director:
                 f"{nudge}")
 
     def _make_packet(self, project: Project, *, trigger: str,
-                     hint: str) -> CommandPacket:
+                     hint: str, context_override: str | None = None
+                     ) -> CommandPacket:
         try:
             out: PacketOut = self.router.structured(
                 PACKET_SYSTEM, self._project_digest(project) +
@@ -516,14 +517,14 @@ class Director:
                 affected_modules=list(project.modules))
         except ModelError as exc:
             log.warning("packet generation failed (%s); deterministic fallback", exc)
-            packet = self._fallback_packet(trigger, hint)
+            packet = self._fallback_packet(trigger, hint, context_override)
 
         report = self.registry.get("command_packet").verify(packet)
         if not report.passed:
             self._audit(project, "packet.rejected",
                         f"Generated packet failed evaluation "
                         f"(score={report.score}): {report.issues}")
-            packet = self._fallback_packet(trigger, hint)
+            packet = self._fallback_packet(trigger, hint, context_override)
             report = self.registry.get("command_packet").verify(packet)
         # verifier-honesty guard: no option may keep a VERIFIED check unless a
         # real artifact backs it — downgrade before it can ever be presented
@@ -557,6 +558,12 @@ class Director:
                     f"{', issues=' + str(coh['issues']) if coh['issues'] else ''}"
                     f"{', warnings=' + str(coh['warnings']) if coh['warnings'] else ''})",
                     {"packet_id": packet.id})
+        # trusted-body path (Constitution #3): when the siren supplies a
+        # trusted damage report, surface it VERBATIM — the LLM may still
+        # propose recovery OPTIONS, but it does not get to re-narrate the
+        # measured damage. Set last so no post-processing can overwrite it.
+        if context_override is not None:
+            packet.context = context_override
         packet.status = PacketStatus.PRESENTED
         project.packets[packet.id] = packet
         self._audit(project, "packet.presented",
@@ -566,11 +573,13 @@ class Director:
         return packet
 
     @staticmethod
-    def _fallback_packet(trigger: str, hint: str) -> CommandPacket:
+    def _fallback_packet(trigger: str, hint: str,
+                         context_override: str | None = None) -> CommandPacket:
         """Deterministic, always-valid packet for offline/failed generation."""
         return CommandPacket(
             title="Choose how to proceed",
-            context=f"Decision point reached ({trigger}). {hint}",
+            context=(context_override if context_override is not None
+                     else f"Decision point reached ({trigger}). {hint}"),
             trigger=trigger,
             options=[
                 CommandOption(
