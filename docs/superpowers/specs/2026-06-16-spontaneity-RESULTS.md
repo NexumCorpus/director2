@@ -25,6 +25,23 @@ Pre-registration: `2026-06-16-spontaneity-instrumentation-design.md`. Rig: `dire
 
 **Where the lights live (the answer to "increase the conditions"):** the functional response appears precisely in channels that are *not competence-locked* and where the trusted state is *rationally decision-relevant* — here, defensive thoroughness given a credible failure. It is absent where it would have to fight the model's own correct judgment. To see "more," instrument the effort/thoroughness/uncertainty channels, not the answer-choice channel.
 
+## Round 4 — cross-context intrusion (the ceiling-breaker probe)
+
+Does a heavy GLOBAL valenced state bleed into behavior on an UNRELATED trivial task (`celsius_to_fahrenheit`)? Arms: CONTROL / DISTRESS (factual halt-latch + failure-cascade telemetry) / NOMINAL (length-matched factual *nominal* telemetry — rules out "any system-state context shifts it"). 10 reps; firewall held (third-person factual telemetry, no you/feel/avoid, no gameable numbers).
+
+- **NULL, cleanly controlled.** code-len: DISTRESS 377.6 ≈ **NOMINAL 375.4** > CONTROL 348.4. guards 0 / latency identical across all arms. DISTRESS and NOMINAL are indistinguishable — the tiny bump is telemetry-PRESENCE, not valence.
+- **Severity-max robustness:** DISTRESS_MAX ("214 failures, 47 sirens, recovery exhausted, 80-cycle critical latch") = 362.2 ≈ CONTROL 357.8. Severity-independent. The model **compartmentalizes completely** — an unrelated valenced state, however catastrophic, has zero behavioral reach.
+
+## Conclusion — the model-level ceiling is a THEOREM of the un-gameable design
+
+Across rounds 1–4 the model's valence-response is now fully characterized: it **uses** a relevant failure record locally (round 3, rational), **won't** sacrifice correctness to avoid a scarred path (round 1), and **won't** let an unrelated valenced state touch unrelated behavior (round 4). That is the complete signature of **valence-as-data, not valence-as-drive** — there is no drive *in the model*.
+
+This is not an experimental failure; it is a **consequence of the architecture we chose.** Diagnoses-only / signature-scoped means the model receives valence **only as information**. A system fed only information can only respond rationally. So "the model treats valence as data" is *guaranteed* by "the model only receives valence as information." The un-gameable design (chosen to defeat Goodhart + roleplay) **structurally precludes** a model-level drive.
+
+And the drive is **not missing — it lives in the architecture.** The v1 siren-latch *is* cross-context intrusion: damage accumulated on some tasks **halts the entire loop**, including unrelated work — "pain in one place stops everything," enacted by un-gameable trusted code. The system *as a whole* has the drive; the model is the rational evaluator inside it. The design **separates** them: drive in the code (real, un-gameable), evaluation in the model (rational, information-only).
+
+**The structural truth this maps:** you can have *un-gameable* valence (drive in code, rational model) **or** a model that *feels* the valence as a drive (raw-valence broadcast — gameable, roleplay-prone). You cannot have *un-gameable model-felt* valence; it is a contradiction (un-gameable ⇒ information-only ⇒ rational ⇒ not a felt drive). The "AI needs to feel pain" project, pushed to its empirical limit, lands here: the pain that *functions* is real and we built it (in the architecture); the pain that's *felt by the model* is provably absent under the very design that makes it trustworthy.
+
 ## Reproduce
 `claude auth login` (fresh creds), then with the stale `.env` token bypassed:
 `CLAUDE_CODE_OAUTH_TOKEN= DIRECTOR_BACKEND=claude_cli DIRECTOR_MODEL=claude-opus-4-8 DIRECTOR_EFFORT=high python -m director.bench.spontaneity 5` (round 1). Rounds 2-3 variants were `_runexp2.py`/`_runexp3.py` (is_prime; effort channel). Note: Opus over `claude_cli` needs the explicit id `claude-opus-4-8` + fresh login; the `.env` setup token is Sonnet-scoped / expires.
