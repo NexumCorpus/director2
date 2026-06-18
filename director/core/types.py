@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import StrEnum
 
+from .selfstate import SelfState
+
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -428,6 +430,9 @@ class Project:
     coherence_blocks: int = 0                  # charter_integrity signal (incremented where a delta is blocked)
     # --- gut markers (v2) ---------------------------------------------------
     marker_deferrals: dict = field(default_factory=dict)   # {task_id: deferral_count}
+    # --- nervous-system v3 (interoceptive self-model; inert until ON reads it) ---
+    self_state: SelfState = field(default_factory=SelfState)
+    valence_history: list[float] = field(default_factory=list)  # bounded ring of composites
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
 
