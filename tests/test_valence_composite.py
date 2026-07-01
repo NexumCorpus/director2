@@ -70,10 +70,14 @@ def test_valence_floor_is_minus_one_when_all_present_axes_saturated():
     assert abs(body.valence - (-1.0)) < 1e-6
 
 
-def test_advance_does_not_import_or_call_compute_body_yet():
+def test_advance_consults_posture_but_never_recomputes_the_body():
+    # v1 invariant that SURVIVES v3: advance() never recomputes the trusted Body
+    # itself — compute_body lives only in _nervous_pass (separation of concerns).
+    # v3 reality: advance MAY read the persisted Homeostat posture to grade its
+    # throughput, but every such consultation is gated behind nervous_enabled.
     src = inspect.getsource(director_mod.Director.advance)
-    assert "compute_body" not in src
-    assert "valence" not in src
+    assert "compute_body" not in src           # never recomputes the Body
+    assert "nervous_enabled" in src            # any valence consultation is gated
 
 
 def test_compute_body_is_pure_no_mutation_of_project():

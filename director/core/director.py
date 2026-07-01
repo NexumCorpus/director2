@@ -49,6 +49,8 @@ from .types import (AgentRun, Artifact, AuditEvent, Charter, CommandOption,
                     ResponseType, Risk, RiskLevel, StateDelta, Task,
                     TaskStatus, utcnow)
 from .valence import check_clear_rule, compute_body, evaluate_scream
+from .homeostat import compute_posture, recovery_score
+from .selfstate import update_self_state
 
 log = get_logger("director")
 
@@ -779,6 +781,13 @@ class Director:
 
         refresh_statuses(project)
         limit = max_tasks or self.cfg.max_tasks_per_advance
+        # v3 Homeostat: an AUTONOMOUS nervous advance grades its own throughput by
+        # valence (fewer tasks under pain; 0 at the latch). Human/force advances
+        # (max_tasks given, or not autonomous) are exempt — command outranks. OFF
+        # and calm are byte-identical (posture.throughput == max_tasks_per_advance).
+        if self.cfg.nervous_enabled and autonomous and max_tasks is None:
+            limit = min(limit, compute_posture(project.self_state,
+                                               cfg=self.cfg).throughput)
         if self.cfg.nervous_enabled and self.markers is not None:
             batch = self._advisory_batch(project, limit)
         else:
@@ -961,14 +970,22 @@ class Director:
         the model; the weight stays trusted-only."""
         from ..memory.markers import task_signature
         frontier = ready_tasks(project)        # all READY, canonical order
+        # v3 recovery drive: under sustained pain the homeostat front-loads
+        # pain-reducing (diagnostic/review) work. recovery_pressure is 0 when calm,
+        # so this term is INERT and the ordering is exactly v2's (least-repelled
+        # first). Trusted: recovery_score reads task role, never a model judgment.
+        rp = compute_posture(project.self_state, cfg=self.cfg).recovery_pressure
+        engaged = rp >= self.cfg.recovery_pressure_threshold
         scored = []
         for i, t in enumerate(frontier):
             repel = sum(m.weight
                         for m in self.markers.recall(task_signature(t)))
-            scored.append((repel, i, t))        # repel <= 0; i = canonical tiebreak
-        scored.sort(key=lambda x: (-x[0], x[1]))   # least-repelled (repel desc) first
-        batch = [t for _, _, t in scored[:limit]]
-        deferred = [t for _, _, t in scored[limit:]]
+            rec = (recovery_score(t) * rp) if engaged else 0.0
+            scored.append((rec, repel, i, t))
+        # recovery-promoting first, then least-repelled, then canonical tiebreak
+        scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
+        batch = [t for _, _, _, t in scored[:limit]]
+        deferred = [t for _, _, _, t in scored[limit:]]
         self._note_deferrals(project, batch, deferred)
         return batch
 
@@ -1014,6 +1031,15 @@ class Director:
         body = compute_body(project, secret=secret, perf=self.perf,
                             since=since, cfg=self.cfg)
         project.body = body
+
+        # v3 interoceptive self-model: persist the episode (valence trajectory,
+        # duration, recovery tallies, narrative) from the trusted Body. Pure
+        # observation here — the Homeostat reads it in advance(). ON-only path.
+        project.valence_history.append(float(body.valence))
+        if len(project.valence_history) > 32:
+            project.valence_history = project.valence_history[-32:]
+        project.self_state = update_self_state(
+            project.self_state, body, cfg=self.cfg, cycle_seq=project.cycle_seq)
 
         if project.scream_open is not None:
             if check_clear_rule(project, project.scream_open, secret=secret,

@@ -138,6 +138,20 @@ class Config:
     marker_digest_max: int = 3         # max markers recalled/injected per task
     marker_store_path: str = ""        # "" -> cfg.memory_dir / "markers_index.json"
 
+    # --- nervous system (v3: homeostat + interoceptive self-model) --------------
+    # DEFAULT unmodulated/OFF: with nervous_enabled False the loop never calls
+    # compute_posture, so these are inert and the OFF path stays byte-identical.
+    # Declared coefficients, tuned later via the bench (the v1/v2 discipline). The
+    # Homeostat grades the loop continuously by valence; the latch (throughput 0
+    # at <= siren_threshold) is the ENDPOINT of the continuum, not a separate path.
+    default_max_attempts: int = 2          # declared baseline persistence (Task default)
+    posture_throughput_floor: int = 1      # min tasks/advance ABOVE the latch (0 only at siren)
+    posture_persistence_floor: int = 1     # min attempts before terminal FAILED under pain
+    posture_recovery_gain: float = 1.0     # recovery_pressure = clamp(-valence/|siren| * gain)
+    posture_caution_gain: float = 0.5      # caution = 1 + pain * gain  [phase-2 wiring]
+    recovery_pressure_threshold: float = 0.10  # recovery agenda engages above this
+    self_model_broadcast: bool = False     # BET-PATH, default OFF: inject SelfState narrative
+
     # --- sandbox / grounding ----------------------------------------------------
     sandbox_timeout_s: float = 20.0
     sandbox_mem_cap_mb: int = 1024
