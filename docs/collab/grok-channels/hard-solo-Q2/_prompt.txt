@@ -1,0 +1,5 @@
+In how many distinct ways can a 3-by-8 rectangle be tiled completely by 1-by-2 dominoes (each domino horizontal or vertical)?
+
+Think step by step, then end your response with EXACTLY one line:
+CANDIDATE: <your answer as a Python literal>
+(an int for a number; a list like [1, 2, 3] for a set; a quoted string like "ABAB" for a string).

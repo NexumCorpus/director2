@@ -1,0 +1,46 @@
+# Clean problem statements for solo and together runs.
+# Copy each block exactly. Do NOT include any "known answer" lines.
+
+=== P1 ===
+Find the *smallest* integer n > 50 such that:
+- n % 13 == 5
+- (n + 3) % 17 == 2
+- (n - 1) % 19 == 7
+- n % 3 != 0
+
+Think step by step. At the very end, output on its own line:
+CANDIDATE: 12345
+
+(Replace with your number.)
+
+=== P2 ===
+Find a set S of *exactly 5 distinct positive integers* that minimizes max(S), such that all pairwise sums (a+b for a < b) are unique — no two different pairs share the same sum.
+
+Report your set as a sorted list or tuple and state the max.
+
+Think step by step. At the very end, output on its own line:
+CANDIDATE: [1, 3, 6, 10, 15]
+
+(Replace with your set.)
+
+=== P3 ===
+Find the *lexicographically smallest* string s of length exactly 7 using only the letters X, Y, Z such that:
+- It starts with X
+- It contains exactly two Y's
+- No two identical letters are next to each other
+- It does not contain the substring "XZ" anywhere
+
+Think step by step. At the very end, output on its own line:
+CANDIDATE: "XYZXYZX"
+
+(Replace with your string in quotes.)
+
+=== P4 ===
+Find the *lexicographically smallest* 4-tuple (a, b, c, d) that uses each of the numbers 1, 2, 3, 4 exactly once and satisfies both:
+- a + b > c + d
+- a * c == b + d + 1
+
+Think step by step. At the very end, output on its own line:
+CANDIDATE: (2, 4, 3, 1)
+
+(Replace with your tuple.)

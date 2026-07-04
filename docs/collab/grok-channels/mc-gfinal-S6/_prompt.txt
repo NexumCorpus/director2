@@ -1,0 +1,6 @@
+Find a set of 6 distinct positive integers whose 15 pairwise SUMS are all distinct, with the largest element as small as possible. Give that minimal largest element.
+
+You answered 13. A reviewer said:
+[claude error: claude CLI timed out after 200s]
+
+Reconsider and give your FINAL answer. ANSWER: <int>.

@@ -1,0 +1,3 @@
+Find a set of 5 distinct positive integers whose 10 pairwise DIFFERENCES are all distinct (a Golomb ruler), with the largest element as small as possible. Give that minimal largest element.
+
+Reason briefly, then end with exactly: ANSWER: <integer>

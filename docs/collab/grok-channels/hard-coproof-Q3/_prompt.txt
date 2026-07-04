@@ -1,0 +1,48 @@
+Problem: Let S(n) be the sum of the first n prime numbers. Find the smallest n > 1 such that n divides S(n).
+
+A colleague proposed:
+---
+## Reasoning
+
+I need the cumulative sum of the first n primes, then check divisibility by n.
+
+**Primes and cumulative sums S(n):**
+
+| n | prime | S(n) | S(n) mod n |
+|---|-------|------|-----------|
+| 2 | 3 | 5 | 1 |
+| 3 | 5 | 10 | 1 |
+| 4 | 7 | 17 | 1 |
+| 5 | 11 | 28 | 3 |
+| 6 | 13 | 41 | 5 |
+| 7 | 17 | 58 | 2 |
+| 8 | 19 | 77 | 5 |
+| 9 | 23 | 100 | 1 |
+| 10 | 29 | 129 | 9 |
+| 11 | 31 | 160 | 6 |
+| 12 | 37 | 197 | 5 |
+| 13 | 41 | 238 | 4 |
+| 14 | 43 | 281 | 1 |
+| 15 | 47 | 328 | 13 |
+| 16 | 53 | 381 | 13 |
+| 17 | 59 | 440 | 15 |
+| 18 | 61 | 501 | 15 |
+| 19 | 67 | 568 | 17 |
+| 20 | 71 | 639 | 19 |
+| 21 | 73 | 712 | 19 |
+| 22 | 79 | 791 | 21 |
+| 23 | 83 | 874 | **0** |
+
+At **n = 23**: S(23) = 874 = 23 × 38, so 23 divides S(23).
+
+**Verification of S(23):** 2+3+5+7+11+13+17+19+23+29+31+37+41+43+47+53+59+61+67+71+73+79+83 = 874. ✓
+
+No smaller n > 1 works (all give nonzero remainders).
+
+CANDIDATE: 23
+---
+Find the SPECIFIC error or give the corrected answer, with reasoning.
+
+Think step by step, then end your response with EXACTLY one line:
+CANDIDATE: <your answer as a Python literal>
+(an int for a number; a list like [1, 2, 3] for a set; a quoted string like "ABAB" for a string).

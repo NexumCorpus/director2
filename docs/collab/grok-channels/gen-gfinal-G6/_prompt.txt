@@ -1,0 +1,15 @@
+Using pennies (1), nickels (5), and dimes (10), in how many ways can you make 30 cents? (Order does not matter.)
+
+You answered 16. A reviewer said:
+Checking each case:
+
+- **d=0:** r=30, n ranges 0 to 6 → 7 ways ✓
+- **d=1:** r=20, n ranges 0 to 4 → 5 ways ✓
+- **d=2:** r=10, n ranges 0 to 2 → 3 ways ✓
+- **d=3:** r=0, n ranges 0 to 0 → 1 way ✓
+
+Sum: 7 + 5 + 3 + 1 = 16. The setup, ranges, and arithmetic are all correct.
+
+ANSWER: 16
+
+Reconsider and give your FINAL answer. ANSWER: <int>.

@@ -1,0 +1,26 @@
+Problem: Find a set of 5 distinct positive integers whose 10 pairwise SUMS are all distinct, with the largest element as small as possible. Give that minimal largest element (a single integer).
+
+A colleague answered 12. Reasoning:
+## Reasoning
+
+**Equivalence to Golomb rulers.** All 10 pairwise sums being distinct is equivalent to all pairwise *differences* being distinct (a Sidon set / Golomb ruler). With 5 elements there are 10 distinct positive differences, all at most the span (largest − smallest), so:
+
+$$\text{span} \ge 10.$$
+
+**Span 10 is impossible.** A span of exactly 10 would force the 10 differences to be precisely {1,2,…,10} — a *perfect* Golomb ruler of order 5. Perfect Golomb rulers exist only for orders ≤ 4, so this fails. Hence span ≥ 11.
+
+**Span 11 is achievable.** The optimal order‑5 Golomb ruler {0,1,4,9,11} has length 11. Shifting to positive integers (min = 1) gives:
+
+$$\{1,2,5,10,12\}.$$
+
+Differences: 1,4,9,11, 3,8,10, 5,7, 2 → {1,2,3,4,5,7,8,9,10,11}, all distinct ⇒ all pairwise sums distinct. ✓
+
+**Minimizing the largest element.** Since min ≥ 1 and span ≥ 11,
+
+$$\max = \min + \text{span} \ge 1 + 11 = 12,$$
+
+and the set above attains max = 12.
+
+ANSWER: 12
+
+Find the specific error or confirm. ANSWER: <int>.

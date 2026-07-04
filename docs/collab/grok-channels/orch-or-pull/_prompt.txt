@@ -1,0 +1,9 @@
+Deep-pull the FULL TEXT of the BMC Anesthesiology 2025 paper "Microtubule-modulating drugs alter sensitivity to isoflurane in mice" (DOI 10.1186/s12871-025-02956-9) â€” it's the load-bearing counter-study and I want the primary, not snippets. Get me EXACTLY:
+1. Every drug tested + mechanism (stabilizer vs destabilizer vs other, e.g. morphine).
+2. For EACH drug: direction of effect on isoflurane LORR sensitivity (more sensitive = lower EC50/left shift, or less = higher EC50/right shift) WITH the actual EC50 numbers vs control.
+3. Dosing regimen for each (acute single dose vs chronic >2wk), and whether direction depends on acute-vs-chronic.
+4. n per group, sex, strain.
+5. The authors' EXACT stated conclusion â€” do they say stabilization STATE predicts direction, or that the picture is mixed/disparate?
+6. Do they cite/frame against Wiest's epoB result, and do they say their data support or contradict the quantum-MT hypothesis?
+7. Limitations the authors state.
+Quote the abstract + conclusion verbatim. This is to confirm or correct our claim that "stabilizer AND destabilizer both increased sensitivity, so stabilization-state isn't the variable." If that's a mischaracterization, tell me straight.

@@ -1,0 +1,7 @@
+{
+  "name": "solo-P3",
+  "system": "You are a careful mathematician. Solve the problem EXACTLY and verify your own answer before finalizing. Reason it out yourself; do NOT write or run code or use any tools \u2014 pure reasoning only.",
+  "model": "grok-build",
+  "session_id": "019edcb4-385c-7a61-9e05-e39da4f784d1",
+  "turns": 1
+}

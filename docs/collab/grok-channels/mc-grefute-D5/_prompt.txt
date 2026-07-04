@@ -1,0 +1,20 @@
+Problem: Find a set of 5 distinct positive integers whose 10 pairwise DIFFERENCES are all distinct (a Golomb ruler), with the largest element as small as possible. Give that minimal largest element.
+
+A colleague answered 12. Reasoning:
+## Reasoning
+
+A Golomb ruler with 5 marks needs all 10 pairwise differences distinct. The minimum possible **span** (largest minus smallest) for an order-5 Golomb ruler is known to be **11**, achieved by {0, 1, 4, 9, 11}.
+
+**Check {0,1,4,9,11}:** differences are 1,3,8,10,2,7,9,5,7... let me verify properly:
+- 1−0=1, 4−0=4, 9−0=9, 11−0=11
+- 4−1=3, 9−1=8, 11−1=10
+- 9−4=5, 11−4=7
+- 11−9=2
+
+Differences: {1,2,3,4,5,7,8,9,10,11} — all 10 distinct. ✓ (This is optimal; span 10 is impossible.)
+
+**Positive integers requirement:** Since the smallest span is 11, and the smallest positive integer is 1, set the smallest mark to 1. Shifting gives {1, 2, 5, 10, 12}, with the same differences. The largest element is 1 + 11 = **12**, and this cannot be reduced (smallest can't be below 1, span can't be below 11).
+
+ANSWER: 12
+
+Find the specific error or confirm. ANSWER: <int>.

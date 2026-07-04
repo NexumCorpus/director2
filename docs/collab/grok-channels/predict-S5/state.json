@@ -1,0 +1,7 @@
+{
+  "name": "predict-S5",
+  "system": "You predict whether a strong mathematician solving by PURE REASONING (no code) will get a problem EXACTLY right. Be calibrated.",
+  "model": "grok-build",
+  "session_id": "019edd49-2408-7842-8632-5d7f0efd25de",
+  "turns": 1
+}

@@ -1,0 +1,5 @@
+What is the minimum number of queens to place on a 6x6 chessboard so that every square is either occupied or attacked by some queen? (Queens attack along ranks, files, and diagonals.)
+
+Think step by step, then end your response with EXACTLY one line:
+CANDIDATE: <your answer as a Python literal>
+(an int for a number; a list like [1, 2, 3] for a set; a quoted string like "ABAB" for a string).

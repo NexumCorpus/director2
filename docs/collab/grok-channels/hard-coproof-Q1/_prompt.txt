@@ -1,0 +1,27 @@
+Problem: Consider nonnegative-integer combinations 6a + 9b + 20c (a,b,c >= 0). What is the LARGEST integer that CANNOT be expressed in this form?
+
+A colleague proposed:
+---
+The classic Chicken McNugget (Frobenius) problem.
+
+We need the largest integer not expressible as 6a+9b+20c.
+
+Check six consecutive values:
+- 44 = 6+18+20
+- 45 = 9·5
+- 46 = 6+20+20
+- 47 = 9+18+20
+- 48 = 6·8
+- 49 = 9+20+20
+
+Since 44–49 are all expressible and adding 6 covers everything beyond, all integers ≥ 44 work.
+
+Now 43: subtract 20 → 23 (=6a+9b? no); subtract 40 → 3 (no); 43 itself as 6a+9b has no solution. So 43 is not expressible.
+
+CANDIDATE: 43
+---
+Find the SPECIFIC error or give the corrected answer, with reasoning.
+
+Think step by step, then end your response with EXACTLY one line:
+CANDIDATE: <your answer as a Python literal>
+(an int for a number; a list like [1, 2, 3] for a set; a quoted string like "ABAB" for a string).

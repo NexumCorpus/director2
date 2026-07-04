@@ -7,3 +7,5 @@ dist/
 .env
 .director2/
 .coverage
+_runtmp/
+.claude/

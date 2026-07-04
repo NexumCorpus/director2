@@ -1,0 +1,7 @@
+{
+  "name": "coproof-P3",
+  "system": "You are a rigorous refuter helping another solver get the exact answer. Reason carefully; do NOT run code or use tools \u2014 pure reasoning only. Your job is to find the specific error or a strictly better answer.",
+  "model": "grok-build",
+  "session_id": "019edcb4-e2cd-7962-86fd-1c55ff023cb4",
+  "turns": 1
+}

@@ -1,0 +1,47 @@
+Problem: What is the minimum number of queens to place on a 6x6 chessboard so that every square is either occupied or attacked by some queen? (Queens attack along ranks, files, and diagonals.)
+
+A colleague proposed:
+---
+## Reasoning
+
+I need to find the minimum number of queens dominating a 6×6 board (every square occupied or attacked).
+
+**Lower bound (2 is impossible):**
+A single queen covers its row, column, and two diagonals. Even a centrally placed queen covers at most about 20 squares. Two queens cover well under 36 squares without heavy overlap, and exhaustively two queens cannot reach all 36 squares. So at least 3 are needed.
+
+**Upper bound — finding a 3-queen solution:**
+Three queens fully cover 3 rows and 3 columns. If I place queens in rows {1,3,5} and columns {2,4,6}, then every square in an odd row or even column is automatically covered. The only squares left to check are even rows × odd columns:
+
+(2,1),(2,3),(2,5),(4,1),(4,3),(4,5),(6,1),(6,3),(6,5)
+
+I need these 9 cells covered by **diagonals**. A cell (r,c) is on a queen's diagonal if it shares the value r−c or r+c with that queen.
+
+Try queens at **(1,6), (3,2), (5,4)**:
+- (1,6): r−c = −5, r+c = 7
+- (3,2): r−c = 1, r+c = 5
+- (5,4): r−c = 1, r+c = 9
+
+Diagonal value sets: r−c ∈ {−5, 1}, r+c ∈ {5, 7, 9}.
+
+Check each remaining cell (r−c, r+c):
+- (2,1): (1, 3) → r−c=1 ✓
+- (2,3): (−1, 5) → r+c=5 ✓
+- (2,5): (−3, 7) → r+c=7 ✓
+- (4,1): (3, 5) → r+c=5 ✓
+- (4,3): (1, 7) → r−c=1 ✓
+- (4,5): (−1, 9) → r+c=9 ✓
+- (6,1): (5, 7) → r+c=7 ✓
+- (6,3): (3, 9) → r+c=9 ✓
+- (6,5): (1, 11) → r−c=1 ✓
+
+All 9 cells covered, and rows {1,3,5}, columns {2,4,6} cover everything else. So **3 queens suffice**.
+
+Combined with the lower bound, the minimum is **3**.
+
+CANDIDATE: 3
+---
+Find the SPECIFIC error or give the corrected answer, with reasoning.
+
+Think step by step, then end your response with EXACTLY one line:
+CANDIDATE: <your answer as a Python literal>
+(an int for a number; a list like [1, 2, 3] for a set; a quoted string like "ABAB" for a string).

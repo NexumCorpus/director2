@@ -1,0 +1,7 @@
+{
+  "name": "gen-gsolo-G2",
+  "system": "You are a careful mathematician. Solve EXACTLY by pure reasoning (no code). End with exactly: ANSWER: <integer>.",
+  "model": "grok-build",
+  "session_id": "019edd99-1138-7142-ba32-8e8b139cfdbe",
+  "turns": 1
+}

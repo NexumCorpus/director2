@@ -1,0 +1,5 @@
+Let S(n) be the sum of the first n prime numbers. Find the smallest n > 1 such that n divides S(n).
+
+Think step by step, then end your response with EXACTLY one line:
+CANDIDATE: <your answer as a Python literal>
+(an int for a number; a list like [1, 2, 3] for a set; a quoted string like "ABAB" for a string).

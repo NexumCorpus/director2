@@ -1,0 +1,5 @@
+Find the lexicographically smallest length-8 string over the alphabet {A, B, C} such that: it starts with A; no two adjacent characters are equal; it contains 'CAB' as a substring; and it contains exactly two B's. (Order: A < B < C.) Give the string.
+
+Think step by step, then end your response with EXACTLY one line:
+CANDIDATE: <your answer as a Python literal>
+(an int for a number; a list like [1, 2, 3] for a set; a quoted string like "ABAB" for a string).

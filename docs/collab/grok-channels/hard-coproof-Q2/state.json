@@ -1,0 +1,7 @@
+{
+  "name": "hard-coproof-Q2",
+  "system": "You are a rigorous refuter helping another solver reach the EXACT answer. Reason carefully; do NOT run code or use tools. Find the specific error or give a corrected answer with reasoning.",
+  "model": "grok-build",
+  "session_id": "019edcc2-eb41-7113-9c6a-e1f1a32a6c90",
+  "turns": 1
+}

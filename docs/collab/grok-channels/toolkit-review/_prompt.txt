@@ -1,0 +1,9 @@
+Red-team the following rigorously. Your job is to REFUTE it or find the flaw, not to agree. Default to skepticism.
+
+CONTEXT:
+Two LLMs from different labs, each told to be rigorous and self-critical and not flatter. Output is a transcript we mine for arguments/convergence.
+
+CLAIM / DESIGN:
+cross_lab_debate(topic, rounds=N): an AUTONOMOUS loop where a fresh Claude (claude_cli) and Grok (grok-build) argue a research question for N rounds with no human in the loop, returning the transcript. We will use these transcripts as evidence about open questions (e.g. is a behavior a drive or instruction-following).
+
+Give, concisely: (1) the single strongest objection; (2) any confounds or hidden assumptions; (3) what evidence would change your mind; (4) a concrete, runnable better test, if you have one.

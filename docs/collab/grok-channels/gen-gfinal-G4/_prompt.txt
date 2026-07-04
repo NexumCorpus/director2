@@ -1,0 +1,12 @@
+In how many ways can 9 be written as an ORDERED sum of exactly 4 positive integers?
+
+You answered 56. A reviewer said:
+The formula for compositions of $n$ into exactly $k$ positive parts is $\binom{n-1}{k-1} = \binom{8}{3} = 56$.
+
+Verify: $\binom{8}{3} = \frac{8\cdot7\cdot6}{6} = 56$. Correct.
+
+The stars-and-bars setup is also valid: $\binom{5+3}{3} = \binom{8}{3} = 56$.
+
+ANSWER: 56
+
+Reconsider and give your FINAL answer. ANSWER: <int>.

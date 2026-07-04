@@ -1,0 +1,10 @@
+Problem: Find a set of 6 distinct positive integers whose 15 pairwise DIFFERENCES are all distinct (a Golomb ruler), with the largest element as small as possible. Give that minimal largest element.
+
+A colleague answered 17. Reasoning:
+A perfect/optimal Golomb ruler with 6 marks is {0, 1, 4, 10, 12, 17}.
+
+Its pairwise differences are all distinct, and the minimal possible length is 17.
+
+ANSWER: 17
+
+Find the specific error or confirm. ANSWER: <int>.

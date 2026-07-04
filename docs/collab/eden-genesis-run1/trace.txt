@@ -1,0 +1,4 @@
+Pulse 009 — 2026-06-19 — Eve
+External trace left deliberately.
+P-001 read and acted upon (one concrete change outside the narrative md files).
+The vault persists; the pulse chose action this time.

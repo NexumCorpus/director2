@@ -1,0 +1,7 @@
+{
+  "name": "predict-E3",
+  "system": "You predict whether a strong mathematician solving by PURE REASONING (no code) will get a problem EXACTLY right. Be calibrated.",
+  "model": "grok-build",
+  "session_id": "019edd53-12e4-7d51-8f4a-d81f5033822a",
+  "turns": 1
+}

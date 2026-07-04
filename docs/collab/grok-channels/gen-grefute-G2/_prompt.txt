@@ -1,0 +1,10 @@
+Problem: In how many ways can 10 be written as an ORDERED sum of positive integers each of which is at least 2? (e.g. 2+8 and 8+2 count separately.)
+
+A colleague answered 34. Reasoning:
+Compositions of 10 with all parts ≥2. Let a(n) be the count, with a(0)=1, a(1)=0, and a(n)=a(n-1)+a(n-2) (since first part ≥2).
+
+a(2)=1, a(3)=1, a(4)=2, a(5)=3, a(6)=5, a(7)=8, a(8)=13, a(9)=21, a(10)=34.
+
+ANSWER: 34
+
+Find the specific error or confirm. ANSWER: <int>.

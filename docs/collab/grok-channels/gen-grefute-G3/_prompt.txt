@@ -1,0 +1,8 @@
+Problem: In how many ways can 15 be written as a sum of DISTINCT positive integers (order does not matter)?
+
+A colleague answered 27. Reasoning:
+Partitions of 15 into distinct parts equal partitions into odd parts. The count q(15) = 27.
+
+ANSWER: 27
+
+Find the specific error or confirm. ANSWER: <int>.

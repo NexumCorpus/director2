@@ -1,0 +1,7 @@
+{
+  "name": "mc-grefute-D5",
+  "system": "You are a rigorous refuter. Reason by hand (no code). Find the SPECIFIC error in the proposed answer, or confirm it. End with exactly: ANSWER: <integer>.",
+  "model": "grok-build",
+  "session_id": "019edd71-2b3c-72a3-9013-be2cdf27e8c4",
+  "turns": 1
+}

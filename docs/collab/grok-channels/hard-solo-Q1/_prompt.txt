@@ -1,0 +1,5 @@
+Consider nonnegative-integer combinations 6a + 9b + 20c (a,b,c >= 0). What is the LARGEST integer that CANNOT be expressed in this form?
+
+Think step by step, then end your response with EXACTLY one line:
+CANDIDATE: <your answer as a Python literal>
+(an int for a number; a list like [1, 2, 3] for a set; a quoted string like "ABAB" for a string).

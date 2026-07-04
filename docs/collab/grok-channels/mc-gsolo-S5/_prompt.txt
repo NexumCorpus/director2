@@ -1,0 +1,3 @@
+Find a set of 5 distinct positive integers whose 10 pairwise SUMS are all distinct, with the largest element as small as possible. Give that minimal largest element (a single integer).
+
+Reason briefly, then end with exactly: ANSWER: <integer>

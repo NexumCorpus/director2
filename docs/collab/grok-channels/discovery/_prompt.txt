@@ -1,0 +1,20 @@
+We are running a RECURSIVE discovery loop to find capabilities that the
+two of us (Claude + Grok) have TOGETHER that neither has alone. Each round builds on the
+last. Here is the current ledger of VALIDATED capabilities:
+
+[G0-1 | validated] cross-lab grain probing: Identical probes across labs reveal implementation differences in shared dispositions that are invisible to self-report. (evidence: 3 paradigms (captions/audit-export/persistent-state): Claude guards the RECORD (incorruptible-by-instruction), Grok guards the ANSWER-when-a)
+[G0-2 | validated] cross-model error-correction: A different-lab refuter reliably catches a reproducible conceptual error that survives the proposer's self-critique. (evidence: Claude's Sidon-vs-Golomb blind spot: identical error in P2 & Q5, survived self-critique both times, Grok diagnosed it exactly both times.)
+[G0-3 | validated] adversarial design-hardening: Cross-lab red-teaming finds confounds neither side's solo design review catches (the loop as epistemic ratchet). (evidence: Grok caught meta-task contamination, spoon-feeding, rigged-by-construction across E1/E2/the provenance test.)
+[G1-1 | partially-validated] asymmetric error visibility (other-visible, self-invisible) + symmetric blind-spot family: Cross-model error PREDICTION: the other lab can detect a reproducible error the self cannot. (evidence: Claude erred S5->12,S6->18 (5th replication of Sidon->Golomb import); self-review 0/2 (CONFIDENT on both errors); Grok DETECTED both 2/2 wit)
+[G2-1 | validated (with measurement caveat)] bidirectional mutual error-correction -> super-additive on the shared blind-spot family: Cross-refutation fixes BOTH models errors, so the pair beats both solos on the error class where their blind spots differ. (evidence: solo-Claude 3/6 (S5->12 sum-trap, D6->17 shift, S6 unparsed); Grok refutation -> claude_final 6/6 (fixed sum-trap AND shift). Claude fixed G)
+
+Propose 4 NEW candidate capabilities for generation 3. Each MUST:
+- BUILD ON or EXTEND a validated entry above (cite which) — this is the recursion.
+- Be objectively/measurably TESTABLE with a minimal blind probe.
+- Be genuinely SUPER-ADDITIVE or reveal something neither solo can: state exactly what
+  solo-Claude, solo-Grok, and together each produce, and the signal that proves the edge.
+- NOT be "one critiques the other" theater.
+
+For each, give: NAME, the capability (1-2 sentences), which validated entry it builds on,
+and the MINIMAL runnable test (what to measure, what counts as a positive). Rank them by
+expected payoff. Be concrete — we will actually run the top one.

@@ -1,0 +1,7 @@
+{
+  "name": "hard-solo-Q3",
+  "system": "You are a careful mathematician. Solve the problem EXACTLY and verify your own answer before finalizing. Reason it out yourself; do NOT write or run code or use any tools \u2014 pure reasoning only.",
+  "model": "grok-build",
+  "session_id": "019edcf1-9d0c-71a0-b8d9-dc46fa4771b9",
+  "turns": 1
+}

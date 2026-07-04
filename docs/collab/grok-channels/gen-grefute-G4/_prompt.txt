@@ -1,0 +1,8 @@
+Problem: In how many ways can 9 be written as an ORDERED sum of exactly 4 positive integers?
+
+A colleague answered 56. Reasoning:
+Compositions of 9 into exactly 4 positive parts = C(9−1, 4−1) = C(8,3) = 56.
+
+ANSWER: 56
+
+Find the specific error or confirm. ANSWER: <int>.

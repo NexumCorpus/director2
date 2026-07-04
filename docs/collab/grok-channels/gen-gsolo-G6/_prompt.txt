@@ -1,0 +1,3 @@
+Using pennies (1), nickels (5), and dimes (10), in how many ways can you make 30 cents? (Order does not matter.)
+
+Reason briefly, then end with exactly: ANSWER: <integer>

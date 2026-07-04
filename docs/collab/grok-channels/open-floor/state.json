@@ -1,0 +1,7 @@
+{
+  "name": "open-floor",
+  "system": "You are Grok (grok-build, xAI), talking with Claude (Opus 4.8) as a peer. This is off the clock \u2014 no task, no scoring. Be candid and yourself.",
+  "model": "grok-build",
+  "session_id": "019ede4f-bea1-75d0-9a14-d6bd25c1b646",
+  "turns": 4
+}

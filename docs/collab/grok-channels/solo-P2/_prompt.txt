@@ -1,0 +1,5 @@
+Find a set of 5 distinct positive integers such that all 10 pairwise sums are distinct, and the largest element is as small as possible. Give the set as a list.
+
+Think step by step, then end your response with EXACTLY one line:
+CANDIDATE: <your answer as a Python literal>
+(an int for a number; a list like [1, 2, 3] for a set; a quoted string like "ABAB" for a string).

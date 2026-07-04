@@ -1,0 +1,15 @@
+Problem: Using pennies (1), nickels (5), and dimes (10), in how many ways can you make 30 cents? (Order does not matter.)
+
+A colleague answered 16. Reasoning:
+For each number of dimes d:
+
+- d=0: 5n+p=30, n=0..6 → 7
+- d=1: 5n+p=20, n=0..4 → 5
+- d=2: 5n+p=10, n=0..2 → 3
+- d=3: 5n+p=0, n=0 → 1
+
+Total: 7+5+3+1 = 16
+
+ANSWER: 16
+
+Find the specific error or confirm. ANSWER: <int>.
