@@ -17,6 +17,17 @@ Director 2.0 merges two proven systems:
   suite adversarially, tracks structural novelty, and declares verdicts
   (`beats`/`matches`/`below` + `fragile`) by recorded rules.
 
+## Research bench
+
+`director/bench/` and `docs/collab/` carry the live research line built on
+this framework: cross-lab grounding experiments (Claude × Grok,
+refuse-when-unverifiable replicated across two labs), the provenance test,
+the Eden garden experiments (two stateless models sharing a persistent world
+— archives included), covert-channel and persistence probes, and the
+normative-valence result series under `docs/superpowers/specs/`. These are
+experiment artifacts with their preregistrations and RESULTS files — read
+the spec before the probe.
+
 ## Constitution
 
 1. **Grounding first** — no generated claim is believed until executed or
