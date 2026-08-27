@@ -1,7 +1,17 @@
-# Director 2.0
+<div align="center">
+  <img src="./nexum-hero.svg" alt="Director 2 — verified orchestration and recursive discovery" width="100%" />
 
-**Persistent recursive AI symbiont orchestration framework.** Pure Python,
-CLI-first, pip-installable, runs locally or inside Claude Code.
+  <p><strong>Give complex machine work a commander, a memory, and a grader that can say no.</strong></p>
+
+  <p><a href="#five-minute-start">Five-minute start</a> · <a href="#the-command-loop">Command loop</a> · <a href="#the-discovery-loop">Discovery loop</a> · <a href="https://github.com/NexumCorpus">Nexum Corpus</a></p>
+</div>
+
+---
+
+Director 2 is a pure-Python, CLI-first orchestration and discovery system. It
+turns an objective into an event-sourced project, dispatches bounded specialists,
+surfaces consequential choices to the human, and verifies agent output before it
+enters durable state.
 
 Director 2.0 merges two proven systems:
 
@@ -42,7 +52,7 @@ the spec before the probe.
    Command Packets; auto-advance is bounded and stops while packets are open.
    Even the framework's own prompt evolution requires a human `apply`.
 
-## Install
+## Five-minute start
 
 ```powershell
 # Windows
