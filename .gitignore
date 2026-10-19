@@ -10,3 +10,6 @@ dist/
 _runtmp/
 .claude/
 .venv/
+
+# hooks scaffold output (director hooks scaffold <hook>)
+*-pack/
