@@ -152,7 +152,7 @@ runs are deduplicated and injected into future agent prompts (bounded digest).
 director hooks list
 director hooks scaffold fallout2_wr     # dialogue/quest JSON + compiled sfall pack
 director hooks scaffold dmip_isr        # ISR scenario + measured trade space
-director hooks fo2-compile dialogue.mara.json   # JSON -> .ssl + .msg
+director hooks fo2-compile fallout2_wr-pack/dialogue.mara.json   # JSON -> .ssl + .msg
 director hooks add fallout2_wr          # inject domain tasks into a project
 ```
 
