@@ -79,7 +79,7 @@ def test_claude_cli_falls_back_on_rejected_model(monkeypatch):
 
     monkeypatch.setattr(cc.subprocess, "run", fake_run)
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "")
-    b = cc.ClaudeCliBackend()
+    b = cc.ClaudeCliBackend(exe="claude")   # subprocess is faked; no CLI needed
     resp = b.complete("sys", "user", model="fast-x", temperature=0.0,
                       max_tokens=2000, timeout_s=45)
     assert resp.text == "OK"                      # degraded to default, succeeded
