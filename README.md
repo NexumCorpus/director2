@@ -61,7 +61,11 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 bash setup.sh
 ```
 
-Or manually: `pip install -e ".[dev,mem]"` then `director init`.
+Or manually: `pip install -e ".[dev,mem]"` then `director init`. Needs
+Python 3.11+. State goes to `~/.director2` unless you set `DIRECTOR_HOME`.
+
+No keys? Skip the next step: the whole loop below (`new` → `decide` →
+`advance` → `finalize`, and `evolve run topk`) runs offline on the mock.
 
 Set API keys in `.env` (any subset — the router autodetects, prefers
 anthropic > openai > xai > openrouter, and **never silently falls back to
@@ -191,6 +195,13 @@ director/
 ## Tests
 
 ```bash
-python -m pytest          # 122 tests, all offline, sandbox tests use real
+python -m pytest          # 541 tests, all offline, sandbox tests use real
                           # subprocesses with tight timeouts
 ```
+
+CI runs the suite plus the offline quickstart (`init` → `doctor` → `new` →
+`status` → `evolve run topk`) on Ubuntu and Windows, Python 3.11 and 3.13.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
